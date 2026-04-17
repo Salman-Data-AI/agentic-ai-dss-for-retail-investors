@@ -29,7 +29,7 @@ All logic is driven by rules you write yourself in plain English. No coding requ
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/agentic-ai-dss-for-retail-investors.git
+git clone https://github.com/Salman-Data-AI/agentic-ai-dss-for-retail-investors.git
 cd agentic-ai-dss-for-retail-investors
 ```
 
