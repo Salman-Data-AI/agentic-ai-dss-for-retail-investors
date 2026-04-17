@@ -175,7 +175,7 @@ src/
 ├── data/
 │   ├── watchlist.csv     # Your BUY watchlist
 │   └── portfolio.csv     # Your current holdings
-├── db/
+├── database/
 │   └── store.py          # SQLite audit log
 ├── dashboard/
 │   └── app.py            # Streamlit dashboard
