@@ -1,2 +1,4 @@
 .venv/
 .env
+database/signals.db
+__pycache__/
