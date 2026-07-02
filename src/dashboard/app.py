@@ -15,6 +15,7 @@ import streamlit as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
+from dashboard.logic import build_history_rows, split_signal_groups
 from agent.tools import get_fmp_request_count
 from database import (
     read_latest_signals,
@@ -98,8 +99,7 @@ with tab_latest:
     else:
         st.caption(f"Last run: {signals[0]['run_date']}")
 
-        buy_signals  = [s for s in signals if s["signal_type"] == "BUY_EVAL"]
-        sell_signals = [s for s in signals if s["signal_type"] == "SELL_EVAL"]
+        buy_signals, sell_signals = split_signal_groups(signals)
 
         col_buy, col_sell = st.columns(2)
 
@@ -165,19 +165,7 @@ with tab_history:
         if not results:
             st.caption("No records match the selected filters.")
         else:
-            rows = []
-            for s in results:
-                name = s.get("data_fetched", {}).get("name") or s["ticker"]
-                rows.append({
-                    "Run date":  s["run_date"],
-                    "Ticker":    s["ticker"],
-                    "Company":   name,
-                    "Type":      "BUY eval" if s["signal_type"] == "BUY_EVAL" else "SELL eval",
-                    "Signal":    s["signal"],
-                    "Rationale": s.get("rationale") or "",
-                })
-
-            df = pd.DataFrame(rows)
+            df = pd.DataFrame(build_history_rows(results))
 
             def _colour_signal(val):
                 return {
