@@ -152,6 +152,19 @@ Results are printed to the terminal and saved to the database. You can launch th
 
 ---
 
+## Running tests
+
+Install the runtime and test dependencies, then run pytest from the repository root:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+The tests use dummy API keys and monkeypatch all external boundaries, so they do not call Financial Modeling Prep, Anthropic, the real `signals.db`, or the real FMP usage tally file.
+
+---
+
 ## How it works
 
 1. The agent reads your rules from `config.py`
