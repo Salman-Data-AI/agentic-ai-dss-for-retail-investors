@@ -51,12 +51,16 @@ def _render_card(s: dict) -> None:
         }
         if data:
             with st.expander("Data used"):
-                cols = st.columns(len(data))
-                for col, (k, v) in zip(cols, data.items()):
-                    col.metric(
-                        label=k.replace("_", " ").title(),
-                        value=str(v) if v is not None else "-",
-                    )
+                has_nested_values = any(isinstance(v, (dict, list)) for v in data.values())
+                if has_nested_values:
+                    st.json(data)
+                else:
+                    cols = st.columns(len(data))
+                    for col, (k, v) in zip(cols, data.items()):
+                        col.metric(
+                            label=k.replace("_", " ").title(),
+                            value=str(v) if v is not None else "-",
+                        )
 
 
 # ------------------------------------------------------------------ page setup
@@ -104,7 +108,7 @@ with tab_latest:
         col_buy, col_sell = st.columns(2)
 
         with col_buy:
-            st.subheader("Watchlist — BUY evaluation")
+            st.subheader("Watchlist — BUY / HOLD evaluation")
             if buy_signals:
                 for s in buy_signals:
                     _render_card(s)

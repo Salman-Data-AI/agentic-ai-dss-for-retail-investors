@@ -8,7 +8,7 @@ The system has four main layers:
 
 - Input and configuration: plain-English investment rules plus CSV watchlist and portfolio files.
 - Agent orchestration: Anthropic Claude evaluates one ticker at a time and calls tools only for required metrics.
-- Market data tools: FMP-backed functions fetch quote, technical, and fundamental data.
+- Market data tools: FMP-backed functions fetch quote, technical, fundamental, profile, performance, analyst, and earnings data.
 - Persistence and presentation: SQLite stores each run, and Streamlit displays the latest results.
 
 ## Repository Structure
@@ -36,7 +36,7 @@ Project-level files:
 
 - `README.md`: setup and user guide.
 - `requirements.txt`: Python dependencies.
-- `.env`: local Anthropic API key, not committed.
+- `.env`: local Anthropic and FMP API keys, not committed.
 
 ## Runtime Components
 
@@ -110,23 +110,40 @@ Available tools:
 - `get_quote`: current price, day change percentage, 52-week high/low, volume, market cap, and company name.
 - `get_rsi`: Relative Strength Index for overbought/oversold analysis.
 - `get_sma`: simple moving average for trend analysis.
-- `get_key_metrics`: PE ratio and trailing EPS.
+- `get_key_metrics`: existing PE ratio and trailing EPS contract.
+- `get_valuation_ratios`: P/E, P/B, P/S, PEG, debt-to-equity, liquidity ratios, interest coverage, and margins.
+- `get_financial_health`: ROE, ROA, ROIC, EV/EBITDA, free-cash-flow yield, earnings yield, net debt/EBITDA, and Graham number.
+- `get_income_statement`: latest annual revenue, gross profit, EBITDA, operating income, net income, EPS, diluted EPS, and fiscal year.
+- `get_balance_sheet`: latest annual assets, liabilities, debt, cash and short-term investments, and inventory.
+- `get_cash_flow`: latest annual operating cash flow, capital expenditures, dividends, buybacks, and net change in cash.
+- `get_performance`: trailing 1D, 5D, 1M, 3M, 6M, year-to-date, 1Y, 3Y, and 5Y returns.
+- `get_profile`: beta, sector, industry, exchange, market cap, average volume, ETF/fund/ADR flags, IPO date, and last dividend.
+- `get_technical_indicator`: latest EMA, ADX, Williams %R, or standard deviation value.
+- `get_price_target`: analyst high, low, consensus, and median price targets.
+- `get_analyst_rating`: analyst rating snapshot and component scores.
+- `get_analyst_estimates`: annual revenue, EPS, EBITDA estimates, and EPS analyst count.
+- `get_earnings`: past and upcoming earnings rows with EPS and revenue estimates/actuals.
 
 Tool descriptions are important because Claude uses them to decide which tool is relevant to the user's rules.
 
 ### Market Data Tools: `src/agent/tools.py`
 
-The market data layer uses Financial Modeling Prep (FMP) and `requests`.
+The market data layer uses Financial Modeling Prep (FMP) stable API endpoints and `requests`.
 
-Functions:
+Design:
 
-- `_history(ticker, period)`: fetches historical daily prices.
-- `get_quote(ticker)`: fetches current quote and company-level market data.
-- `get_rsi(ticker, period=14)`: calculates RSI using Wilder-style exponential smoothing.
-- `get_sma(ticker, period=50)`: calculates a rolling simple moving average.
-- `get_key_metrics(ticker)`: fetches trailing PE ratio and EPS.
+- `_fmp_get(path, params)`: thin shared FMP client used by all public tools.
+- Each public data tool makes one stable API request for one FMP endpoint, except cached repeat calls, which do not re-hit FMP.
+- A module-level in-memory cache is keyed by endpoint, ticker, and request params. Its lifetime is the current Python process only.
+- The persisted daily FMP usage counter and in-process request counter increment only for real outbound FMP requests.
+- Existing public contracts for `get_quote`, `get_rsi`, `get_sma`, and `get_key_metrics` are preserved.
+- Fundamentals use `period=annual`; quarterly fundamentals are intentionally not requested because free-tier endpoints can return HTTP 402.
+- RSI, SMA, and the generic technical indicators are fetched from FMP's server-side technical-indicator endpoints.
+- Bundle tools return curated dictionaries rather than entire FMP payloads to keep agent context and stored `data_fetched` compact.
 
 Each public tool catches exceptions and returns an error dictionary instead of raising. This allows the agent to receive tool failures as data and still produce a structured result.
+
+The FMP client maps common failures to clear messages, including plan/permission errors such as HTTP 402/403, bad paths or tickers such as HTTP 404, rate limits such as HTTP 429, invalid JSON, empty responses, and network errors.
 
 ### Database Layer: `src/database/store.py`
 
@@ -160,6 +177,8 @@ Key functions:
 
 The agent does not read from the database. The database exists for persistence, auditability, and dashboard display.
 
+`data_fetched` is JSON-serialized as text. Nested dictionaries and lists from bundle tools are preserved on write and restored on read; no schema change is required for nested tool outputs.
+
 ### Dashboard: `src/dashboard/app.py`
 
 The dashboard is a Streamlit interface for running and reviewing analyses.
@@ -177,7 +196,7 @@ The dashboard uses progressive disclosure:
 
 - Signal and ticker are visible immediately.
 - Rationale is shown in an expander.
-- Data used is shown in a separate expander.
+- Data used is shown in a separate expander. Flat scalar values render as compact metric columns; nested bundle values render as JSON for readability.
 
 ## Data Flow
 
@@ -199,7 +218,7 @@ run_agent(ticker, rules)
 Claude selects required tools
       |
       v
-tools.py fetches FMP data, including server-side technical indicators
+tools.py fetches FMP stable data, using per-run cache for duplicate endpoint/ticker/params calls
       |
       v
 Claude returns signal JSON
@@ -296,6 +315,7 @@ The application expects:
 
 ```text
 ANTHROPIC_API_KEY=your_key_here
+FMP_API_KEY=your_fmp_key_here
 ```
 
 The key is loaded from `.env` using `load_dotenv()`.
@@ -304,14 +324,16 @@ The key is loaded from `.env` using `load_dotenv()`.
 
 The system handles errors at several levels:
 
-- Market data functions return `{"error": "..."}` on fetch or calculation failure.
+- Market data functions return `{"error": "..."}` on fetch, permission, rate-limit, empty-response, invalid-response, or network failure.
 - The agent returns an `ERROR` signal if Claude output cannot be parsed as JSON.
 - The dashboard reports subprocess failure and displays stderr.
 - SQLite table initialization runs before reads and writes, so a missing database file is created automatically.
 
 ## Extension Points
 
-To add a new metric:
+Many metrics can now be added to rules without code changes if they are already returned by an existing bundle tool. For example, once `get_valuation_ratios` exists, rules can reference P/B, PEG, debt-to-equity, current ratio, quick ratio, or margins and Claude can select the same bundle.
+
+To add a metric that is not covered by an existing bundle:
 
 1. Add a new function in `src/agent/tools.py`.
 2. Add a matching schema in `src/agent/tool_schemas.py`.
@@ -331,7 +353,10 @@ To change the UI:
 ## Technical Constraints and Assumptions
 
 - The system is designed for end-of-day decision support, not intraday trading.
-- Market data comes from Financial Modeling Prep; availability and freshness depend on that source and the configured API plan.
+- Market data comes from Financial Modeling Prep stable endpoints; availability and freshness depend on that source and the configured API plan.
+- The intended scope is US equities on the FMP free tier.
+- The FMP free tier is constrained by daily request limits; the app tracks daily usage locally and uses per-run caching to avoid duplicate calls.
+- Fundamentals are annual only. Quarterly fundamentals are not requested because the free tier can return plan-gating errors.
 - The LLM interprets user rules, so ambiguous rules can produce inconsistent evaluations.
 - The current database stores an audit log of generated signals but does not store raw historical market data.
 - The current agent processes tickers sequentially, one Claude conversation per stock.
