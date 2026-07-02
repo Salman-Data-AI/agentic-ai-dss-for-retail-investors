@@ -2,3 +2,4 @@
 .env
 database/signals.db
 __pycache__/
+.vscode/
