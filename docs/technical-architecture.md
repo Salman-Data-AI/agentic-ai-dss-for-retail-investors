@@ -8,7 +8,7 @@ The system has four main layers:
 
 - Input and configuration: plain-English investment rules plus CSV watchlist and portfolio files.
 - Agent orchestration: Anthropic Claude evaluates one ticker at a time and calls tools only for required metrics.
-- Market data tools: yfinance-backed functions fetch quote, technical, and fundamental data.
+- Market data tools: FMP-backed functions fetch quote, technical, and fundamental data.
 - Persistence and presentation: SQLite stores each run, and Streamlit displays the latest results.
 
 ## Repository Structure
@@ -116,7 +116,7 @@ Tool descriptions are important because Claude uses them to decide which tool is
 
 ### Market Data Tools: `src/agent/tools.py`
 
-The market data layer uses `yfinance` and `pandas`.
+The market data layer uses Financial Modeling Prep (FMP) and `requests`.
 
 Functions:
 
@@ -199,7 +199,7 @@ run_agent(ticker, rules)
 Claude selects required tools
       |
       v
-tools.py fetches yfinance data and calculates indicators
+tools.py fetches FMP data, including server-side technical indicators
       |
       v
 Claude returns signal JSON
@@ -285,10 +285,10 @@ Each evaluated ticker produces:
 Defined in `requirements.txt`:
 
 - `anthropic`: Claude API client.
-- `yfinance`: Yahoo Finance market data access.
+- `requests`: Financial Modeling Prep market data access.
 - `streamlit`: dashboard UI.
 - `python-dotenv`: local environment variable loading.
-- `pandas`: CSV handling and technical indicator calculations.
+- `pandas`: CSV handling and dashboard table preparation.
 
 ## Environment Variables
 
@@ -331,7 +331,7 @@ To change the UI:
 ## Technical Constraints and Assumptions
 
 - The system is designed for end-of-day decision support, not intraday trading.
-- Market data comes from Yahoo Finance through `yfinance`; availability and freshness depend on that source.
+- Market data comes from Financial Modeling Prep; availability and freshness depend on that source and the configured API plan.
 - The LLM interprets user rules, so ambiguous rules can produce inconsistent evaluations.
 - The current database stores an audit log of generated signals but does not store raw historical market data.
 - The current agent processes tickers sequentially, one Claude conversation per stock.

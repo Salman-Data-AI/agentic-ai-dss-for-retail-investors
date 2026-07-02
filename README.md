@@ -20,7 +20,7 @@ All logic is driven by rules you write yourself in plain English. No coding requ
 
 - Python 3.10 or higher
 - An Anthropic API key — sign up at [console.anthropic.com](https://console.anthropic.com)
-- No other accounts or API keys required
+- A Financial Modeling Prep API key - sign up at [financialmodelingprep.com](https://financialmodelingprep.com)
 
 ---
 
@@ -59,9 +59,10 @@ Create a file named `.env` in the project root with the following content:
 
 ```
 ANTHROPIC_API_KEY=your_key_here
+FMP_API_KEY=your_fmp_key_here
 ```
 
-Replace `your_key_here` with your actual Anthropic API key. This file is gitignored and will never be committed to version control.
+Replace the placeholders with your actual Anthropic and FMP API keys. This file is gitignored and will never be committed to version control.
 
 ---
 
@@ -155,7 +156,7 @@ Results are printed to the terminal and saved to the database. You can launch th
 
 1. The agent reads your rules from `config.py`
 2. For each stock, it identifies which data points your rules reference
-3. It fetches only those data points from Yahoo Finance (no API key required)
+3. It fetches only those data points from Financial Modeling Prep
 4. It evaluates the data against your rules and decides the signal
 5. It writes a plain-language explanation of the signal
 6. Results are saved locally to `db/signals.db` and displayed in the dashboard
@@ -170,7 +171,7 @@ Every run is logged to the database for auditability. The dashboard always shows
 src/
 ├── agent/
 │   ├── agent.py          # AI agent loop — one call per stock
-│   ├── tools.py          # Yahoo Finance data wrappers
+│   ├── tools.py          # Financial Modeling Prep data wrappers
 │   └── tool_schemas.py   # Tool definitions for the Claude API
 ├── data/
 │   ├── watchlist.csv     # Your BUY watchlist
@@ -190,7 +191,7 @@ src/
 
 - Designed for **end-of-day analysis** of S&P 500 stocks. Not suitable for intraday trading.
 - Recommendations are based on the rules you define. The system does not predict market movements.
-- Data is sourced from Yahoo Finance via the `yfinance` library. Occasional data gaps may occur.
+- Data is sourced from Financial Modeling Prep. Free-plan request limits may apply.
 - The AI agent (Claude) interprets your rules — write them clearly for best results.
 
 ---

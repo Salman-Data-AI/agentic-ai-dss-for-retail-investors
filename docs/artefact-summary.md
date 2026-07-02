@@ -99,7 +99,7 @@ This keeps the analysis focused on the user's stated criteria.
 
 ### Market Data Retrieval
 
-Market data is fetched through Yahoo Finance using the `yfinance` library. Technical indicators such as RSI and SMA are calculated locally using price history and pandas.
+Market data is fetched through Financial Modeling Prep using `requests`. Technical indicators such as RSI and SMA are fetched from FMP's server-side indicator endpoints.
 
 This design keeps indicator calculations transparent and inspectable in the codebase.
 
@@ -181,7 +181,7 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 
 - It is intended for decision support, not automated trading.
 - It does not place orders or connect to brokerage accounts.
-- It depends on Yahoo Finance data availability through `yfinance`.
+- It depends on Financial Modeling Prep data availability and the configured API plan.
 - It relies on the AI model's interpretation of the user's rules.
 - Ambiguous or contradictory rules can lead to weaker recommendations.
 - It currently processes stocks sequentially.

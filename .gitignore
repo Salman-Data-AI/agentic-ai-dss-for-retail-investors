@@ -3,3 +3,5 @@
 database/signals.db
 __pycache__/
 .vscode/
+docs/prompts/
+src/data/fmp_usage.json
