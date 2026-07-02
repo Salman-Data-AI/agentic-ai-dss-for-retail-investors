@@ -15,6 +15,7 @@ import streamlit as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
+from agent.tools import get_fmp_request_count
 from database import (
     read_latest_signals,
     read_filtered_signals,
@@ -66,6 +67,7 @@ st.set_page_config(
 
 st.title("Agentic DSS for Retail Investors")
 st.caption(f"Model: `{config.MODEL}`")
+st.metric("FMP requests today", get_fmp_request_count())
 
 if st.button("Run Analysis", type="primary"):
     with st.spinner("Agent evaluating your stocks — this takes ~10-20 seconds..."):

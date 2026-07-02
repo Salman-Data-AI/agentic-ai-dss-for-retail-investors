@@ -11,7 +11,6 @@ Usage:
 import os
 import sys
 from datetime import datetime
-import yfinance as yf
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -24,6 +23,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import config
 from agent import run_agent
+from agent.tools import get_fmp_request_count, get_fmp_run_request_count, get_quote
 from database import write_signals
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -42,6 +42,13 @@ def _load_portfolio() -> list[dict]:
     return df.to_dict(orient="records")
 
 
+def _ensure_name(signal: dict, ticker: str) -> None:
+    if signal["data_fetched"].get("name"):
+        return
+    quote = get_quote(ticker)
+    signal["data_fetched"]["name"] = quote.get("name", ticker)
+
+
 def main() -> None:
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     all_signals: list[dict] = []
@@ -51,7 +58,7 @@ def main() -> None:
     for ticker in _load_watchlist():
         print(f"  {ticker:<8}", end=" ", flush=True)
         signal = run_agent(ticker=ticker, rules=config.BUY_RULES, model=config.MODEL)
-        signal["data_fetched"]["name"] = yf.Ticker(ticker).info.get("longName") or ticker
+        _ensure_name(signal, ticker)
         signal.update({"signal_type": "BUY_EVAL", "run_date": run_date})
         all_signals.append(signal)
         print(f"→ {signal['signal']:4}  {signal.get('rationale', '')[:80]}")
@@ -68,7 +75,7 @@ def main() -> None:
         )
         print(f"  {ticker:<8}", end=" ", flush=True)
         signal = run_agent(ticker=ticker, rules=rules_with_context, model=config.MODEL)
-        signal["data_fetched"]["name"] = yf.Ticker(ticker).info.get("longName") or ticker
+        _ensure_name(signal, ticker)
         signal.update({
             "signal_type": "SELL_EVAL",
             "run_date": run_date,
@@ -80,6 +87,8 @@ def main() -> None:
     # -------------------------------------------------------- write to DB ---
     write_signals(all_signals)
     print(f"\n✓ {len(all_signals)} signals saved  ·  run: {run_date}")
+    print(f"FMP requests this run: {get_fmp_run_request_count()}")
+    print(f"FMP requests today:    {get_fmp_request_count()}")
     print("  Launch dashboard:  streamlit run src/dashboard/app.py\n")
 
 
