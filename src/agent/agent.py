@@ -9,7 +9,24 @@ import json
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
-from .tools import get_quote, get_rsi, get_sma, get_key_metrics
+from .tools import (
+    get_analyst_estimates,
+    get_analyst_rating,
+    get_balance_sheet,
+    get_cash_flow,
+    get_earnings,
+    get_financial_health,
+    get_income_statement,
+    get_key_metrics,
+    get_performance,
+    get_price_target,
+    get_profile,
+    get_quote,
+    get_rsi,
+    get_sma,
+    get_technical_indicator,
+    get_valuation_ratios,
+)
 from .tool_schemas import TOOL_SCHEMAS
 
 load_dotenv()
@@ -21,6 +38,18 @@ _TOOL_DISPATCH = {
     "get_rsi": get_rsi,
     "get_sma": get_sma,
     "get_key_metrics": get_key_metrics,
+    "get_valuation_ratios": get_valuation_ratios,
+    "get_financial_health": get_financial_health,
+    "get_income_statement": get_income_statement,
+    "get_balance_sheet": get_balance_sheet,
+    "get_cash_flow": get_cash_flow,
+    "get_performance": get_performance,
+    "get_profile": get_profile,
+    "get_technical_indicator": get_technical_indicator,
+    "get_price_target": get_price_target,
+    "get_analyst_rating": get_analyst_rating,
+    "get_analyst_estimates": get_analyst_estimates,
+    "get_earnings": get_earnings,
 }
 
 _SYSTEM_PROMPT = """You are a rule-based investment decision support system for retail investors.

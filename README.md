@@ -84,7 +84,7 @@ Consider buying a stock if ALL of the following are true:
 ```
 
 You can reference any of the following in your rules:
-`RSI`, `current price`, `52-week high`, `52-week low`, `PE ratio`, `EPS`, `SMA (50-day or 200-day)`, `volume`, `market cap`
+`RSI`, `current price`, `52-week high`, `52-week low`, `PE ratio`, `EPS`, `SMA (50-day or 200-day)`, `volume`, `market cap`, valuation ratios, profitability margins, liquidity ratios, debt ratios, ROE, ROA, ROIC, EV/EBITDA, free-cash-flow yield, annual income statement values, annual balance sheet values, annual cash-flow values, trailing performance, beta, sector, industry, analyst price targets, analyst ratings, annual analyst estimates, earnings dates, EMA, ADX, Williams %R, and standard deviation.
 
 ### Set your SELL rules
 
@@ -175,6 +175,29 @@ The tests use dummy API keys and monkeypatch all external boundaries, so they do
 6. Results are saved locally to `db/signals.db` and displayed in the dashboard
 
 Every run is logged to the database for auditability. The dashboard always shows the most recent run.
+
+### Market data tools
+
+The agent fetches data through Financial Modeling Prep stable API endpoints. To stay friendly to the FMP free tier, related metrics are grouped into single-call bundle tools:
+
+- `get_quote`: current price, daily change, 52-week range, volume, market cap, company name
+- `get_rsi`: latest RSI for a selected period
+- `get_sma`: latest simple moving average for a selected period
+- `get_key_metrics`: existing PE ratio and EPS TTM contract
+- `get_valuation_ratios`: P/E, P/B, P/S, PEG, debt-to-equity, current/quick ratio, interest coverage, margins
+- `get_financial_health`: ROE, ROA, ROIC, EV/EBITDA, free-cash-flow yield, earnings yield, net debt/EBITDA, Graham number
+- `get_income_statement`: latest annual revenue, gross profit, EBITDA, operating income, net income, EPS, diluted EPS
+- `get_balance_sheet`: latest annual assets, liabilities, debt, cash and short-term investments, inventory
+- `get_cash_flow`: latest annual operating cash flow, capex, dividends, buybacks, net change in cash
+- `get_performance`: trailing 1D, 5D, 1M, 3M, 6M, YTD, 1Y, 3Y, and 5Y returns
+- `get_profile`: beta, sector, industry, exchange, market cap, average volume, ETF/fund/ADR flags, IPO date, last dividend
+- `get_technical_indicator`: latest EMA, ADX, Williams %R, or standard deviation
+- `get_price_target`: analyst high, low, consensus, and median targets
+- `get_analyst_rating`: analyst rating and component scores
+- `get_analyst_estimates`: annual revenue, EPS, EBITDA estimates and EPS analyst count
+- `get_earnings`: past and upcoming earnings dates with EPS/revenue estimates and actuals
+
+FMP free-tier constraints matter: the free plan is limited to 250 requests per day, legacy `/api/v3` paths are not used, and fundamentals request annual data only. Quarterly fundamentals can return HTTP 402 on the free tier; the app treats plan, permission, rate-limit, empty-response, and network failures as tool-level error dictionaries so an analysis run can degrade gracefully instead of crashing.
 
 ---
 

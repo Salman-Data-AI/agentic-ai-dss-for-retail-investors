@@ -56,6 +56,7 @@ def isolated_fmp_usage(workspace_tmp_path, monkeypatch):
     usage_path = workspace_tmp_path / "fmp_usage.json"
     monkeypatch.setattr(tools, "_USAGE_PATH", str(usage_path))
     monkeypatch.setattr(tools, "_FMP_RUN_REQUEST_COUNT", 0)
+    monkeypatch.setattr(tools, "_FMP_RUN_CACHE", {})
     return usage_path
 
 

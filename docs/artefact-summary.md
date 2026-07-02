@@ -41,6 +41,14 @@ Example data points include:
 - EPS.
 - Volume.
 - Market capitalization.
+- Valuation ratios such as P/B, P/S, PEG, and EV/EBITDA.
+- Profitability and quality metrics such as margins, ROE, ROA, and ROIC.
+- Liquidity and leverage metrics such as current ratio, quick ratio, debt-to-equity, and net debt/EBITDA.
+- Annual income statement, balance sheet, and cash-flow values.
+- Trailing performance over daily, monthly, year-to-date, and multi-year horizons.
+- Company profile values such as beta, sector, industry, exchange, and ETF/fund/ADR flags.
+- Analyst price targets, analyst ratings, annual estimates, and earnings dates.
+- Additional technical indicators such as EMA, ADX, Williams %R, and standard deviation.
 
 ## How It Works
 
@@ -92,16 +100,19 @@ The agent does not fetch every available metric by default. It reads the user's 
 For example:
 
 - If the rule mentions RSI, the agent calls the RSI tool.
-- If the rule mentions valuation or PE ratio, the agent calls the key metrics tool.
+- If the rule mentions valuation or PE ratio, the agent calls a valuation or key-metrics tool.
+- If the rule mentions debt, liquidity, ROE, margins, cash flow, analyst targets, or earnings dates, the agent can select the relevant bundle tool.
 - If the rule mentions 52-week high or low, the agent calls the quote tool.
 
 This keeps the analysis focused on the user's stated criteria.
 
 ### Market Data Retrieval
 
-Market data is fetched through Financial Modeling Prep using `requests`. Technical indicators such as RSI and SMA are fetched from FMP's server-side indicator endpoints.
+Market data is fetched through Financial Modeling Prep stable API endpoints using `requests`. Technical indicators such as RSI, SMA, EMA, ADX, Williams %R, and standard deviation are fetched from FMP's server-side indicator endpoints.
 
-This design keeps indicator calculations transparent and inspectable in the codebase.
+The system uses single-call bundle tools for related metrics. For example, one valuation-ratio request can return P/E, P/B, PEG, liquidity ratios, leverage ratios, and margins. This design is more efficient for the FMP free tier and makes future plain-English rules easier to support when the required metric is already in a bundle.
+
+The app tracks FMP request usage locally and uses an in-memory per-run cache so repeated requests for the same endpoint, ticker, and parameters do not spend additional API calls during the same process run.
 
 ### Plain-Language Explanations
 
@@ -126,7 +137,7 @@ It displays:
 - Portfolio SELL evaluations.
 - Signal cards for each stock.
 - Expandable rationales.
-- Expandable underlying data.
+- Expandable underlying data, including readable JSON for nested bundle outputs.
 
 ## Intended Users
 
@@ -136,7 +147,7 @@ The artefact is also suitable for research or demonstration contexts where expla
 
 ## User Workflow
 
-1. Add an Anthropic API key to `.env`.
+1. Add Anthropic and Financial Modeling Prep API keys to `.env`.
 2. Edit `src/config.py` to define BUY and SELL rules.
 3. Add candidate stocks to `src/data/watchlist.csv`.
 4. Add current holdings to `src/data/portfolio.csv`.
@@ -171,8 +182,9 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - Evaluate watchlist tickers for potential BUY signals.
 - Evaluate portfolio holdings for potential SELL signals.
 - Interpret plain-English investment rules.
-- Fetch quote data, technical indicators, and basic fundamentals.
-- Calculate RSI and SMA locally.
+- Fetch quote data, technical indicators, fundamentals, profile data, performance data, analyst data, and earnings data.
+- Fetch broader valuation, financial-health, annual statement, performance, profile, analyst, and earnings data through FMP bundle tools.
+- Fetch RSI, SMA, and selected technical indicators from FMP server-side endpoints.
 - Produce plain-English rationales.
 - Store signals in SQLite.
 - Display latest results in a Streamlit dashboard.
@@ -182,6 +194,9 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - It is intended for decision support, not automated trading.
 - It does not place orders or connect to brokerage accounts.
 - It depends on Financial Modeling Prep data availability and the configured API plan.
+- It is scoped to US equities and FMP free-tier-friendly usage.
+- FMP free-tier request limits apply; the app tracks local daily usage and uses per-run caching, but each unique endpoint/ticker/parameter request can still consume quota.
+- Annual fundamentals are supported. Quarterly fundamentals are not requested because free-tier endpoints can return plan-gating errors.
 - It relies on the AI model's interpretation of the user's rules.
 - Ambiguous or contradictory rules can lead to weaker recommendations.
 - It currently processes stocks sequentially.
