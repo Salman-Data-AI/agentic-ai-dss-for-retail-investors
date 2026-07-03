@@ -21,6 +21,8 @@ def build_history_rows(results: list[dict]) -> list[dict]:
             "Company": name,
             "Type": "BUY eval" if s["signal_type"] == "BUY_EVAL" else "SELL eval",
             "Signal": s["signal"],
+            "Provider": s.get("provider") or "",
+            "Model": s.get("model") or "",
             "Rationale": s.get("rationale") or "",
         })
     return rows

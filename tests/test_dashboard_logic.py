@@ -27,6 +27,8 @@ def test_build_history_rows():
             "signal": "BUY",
             "rationale": None,
             "data_fetched": {"name": "Apple Inc."},
+            "provider": "anthropic",
+            "model": "claude-test",
         },
         {
             "run_date": "2026-07-02",
@@ -35,6 +37,8 @@ def test_build_history_rows():
             "signal": "HOLD",
             "rationale": "steady",
             "data_fetched": {},
+            "provider": None,
+            "model": None,
         },
     ])
 
@@ -45,6 +49,8 @@ def test_build_history_rows():
             "Company": "Apple Inc.",
             "Type": "BUY eval",
             "Signal": "BUY",
+            "Provider": "anthropic",
+            "Model": "claude-test",
             "Rationale": "",
         },
         {
@@ -53,6 +59,8 @@ def test_build_history_rows():
             "Company": "JPM",
             "Type": "SELL eval",
             "Signal": "HOLD",
+            "Provider": "",
+            "Model": "",
             "Rationale": "steady",
         },
     ]

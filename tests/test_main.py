@@ -46,6 +46,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     monkeypatch.setattr(pipeline.config, "BUY_RULES", "buy rules")
     monkeypatch.setattr(pipeline.config, "SELL_RULES", "sell rules")
     monkeypatch.setattr(pipeline.config, "MODEL", "test-model")
+    monkeypatch.setattr(pipeline.config, "PROVIDER", "openai")
 
     pipeline.main()
 
@@ -59,6 +60,8 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert len(written) == 3
     assert [record["signal_type"] for record in written] == ["BUY_EVAL", "BUY_EVAL", "SELL_EVAL"]
     assert {record["run_date"] for record in written} == {"2026-07-02 12:34:56"}
+    assert {record["provider"] for record in written} == {"openai"}
+    assert {record["model"] for record in written} == {"test-model"}
     assert written[0]["data_fetched"]["name"] == "AAPL Corp"
     assert written[1]["data_fetched"]["name"] == "MSFT Corp"
     assert written[2]["data_fetched"]["name"] == "JPM Corp"

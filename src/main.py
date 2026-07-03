@@ -52,6 +52,10 @@ def _ensure_name(signal: dict, ticker: str) -> None:
 def main() -> None:
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     all_signals: list[dict] = []
+    run_metadata = {
+        "provider": config.PROVIDER,
+        "model": config.MODEL,
+    }
 
     # ------------------------------------------------------------------ BUY --
     print("\n-- BUY evaluation (watchlist) ----------------------------------")
@@ -59,7 +63,7 @@ def main() -> None:
         print(f"  {ticker:<8}", end=" ", flush=True)
         signal = run_agent(ticker=ticker, rules=config.BUY_RULES, model=config.MODEL)
         _ensure_name(signal, ticker)
-        signal.update({"signal_type": "BUY_EVAL", "run_date": run_date})
+        signal.update({"signal_type": "BUY_EVAL", "run_date": run_date, **run_metadata})
         all_signals.append(signal)
         print(f"→ {signal['signal']:4}  {signal.get('rationale', '')[:80]}")
 
@@ -80,6 +84,7 @@ def main() -> None:
             "signal_type": "SELL_EVAL",
             "run_date": run_date,
             "entry_price": holding["entry_price"],
+            **run_metadata,
         })
         all_signals.append(signal)
         print(f"→ {signal['signal']:4}  {signal.get('rationale', '')[:80]}")

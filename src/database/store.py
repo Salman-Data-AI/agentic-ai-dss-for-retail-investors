@@ -25,10 +25,23 @@ def _init(conn: sqlite3.Connection) -> None:
             signal      TEXT NOT NULL,
             rationale   TEXT,
             data_fetched TEXT,
-            entry_price REAL
+            entry_price REAL,
+            provider    TEXT,
+            model       TEXT
         )
     """)
+    _ensure_column(conn, "provider", "TEXT")
+    _ensure_column(conn, "model", "TEXT")
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, column: str, column_type: str) -> None:
+    existing = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(signals)").fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE signals ADD COLUMN {column} {column_type}")
 
 
 def write_signals(signals: list[dict]) -> None:
@@ -38,8 +51,8 @@ def write_signals(signals: list[dict]) -> None:
     conn.executemany(
         """
         INSERT INTO signals
-            (run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -50,6 +63,8 @@ def write_signals(signals: list[dict]) -> None:
                 s.get("rationale"),
                 json.dumps(s.get("data_fetched", {})),
                 s.get("entry_price"),
+                s.get("provider"),
+                s.get("model"),
             )
             for s in signals
         ],
@@ -64,7 +79,7 @@ def read_latest_signals() -> list[dict]:
     _init(conn)
     rows = conn.execute(
         """
-        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price
+        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model
         FROM signals
         WHERE run_date = (SELECT MAX(run_date) FROM signals)
         ORDER BY signal_type, ticker
@@ -104,7 +119,7 @@ def read_filtered_signals(
     _init(conn)
     rows  = conn.execute(
         f"""
-        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price
+        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model
         FROM signals
         WHERE {where}
         ORDER BY run_date DESC, signal_type, ticker
@@ -146,4 +161,6 @@ def _row_to_dict(r: tuple) -> dict:
         "rationale":    r[4],
         "data_fetched": json.loads(r[5]) if r[5] else {},
         "entry_price":  r[6],
+        "provider":     r[7],
+        "model":        r[8],
     }
