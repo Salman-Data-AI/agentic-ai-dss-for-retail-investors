@@ -7,10 +7,36 @@
 
 
 
-# --- Model ---
-# "claude-sonnet-4-6" : faster, cost-efficient (recommended)
-# "claude-opus-4-6"   : slower, more thorough reasoning
+# --- LLM provider and model ---
+# PROVIDER must be one of: "anthropic", "openai", "grok", "groq", "deepseek".
+PROVIDER = "anthropic"
+
+# Copy the exact current model ID from your selected provider's docs.
+# Tool calling must be supported by the model you choose.
 MODEL = "claude-sonnet-4-6"
+
+PROVIDER_SETTINGS = {
+    "anthropic": {
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "base_url": None,
+    },
+    "openai": {
+        "api_key_env": "OPENAI_API_KEY",
+        "base_url": "https://api.openai.com/v1",
+    },
+    "grok": {
+        "api_key_env": "XAI_API_KEY",
+        "base_url": "https://api.x.ai/v1",
+    },
+    "groq": {
+        "api_key_env": "GROQ_API_KEY",
+        "base_url": "https://api.groq.com/openai/v1",
+    },
+    "deepseek": {
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "base_url": "https://api.deepseek.com",
+    },
+}
 
 
 # --- BUY rules ---

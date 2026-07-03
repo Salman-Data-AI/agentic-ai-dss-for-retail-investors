@@ -37,11 +37,17 @@ def _render_card(s: dict) -> None:
     color  = _SIGNAL_COLORS.get(signal, ":gray")
     name   = s.get("data_fetched", {}).get("name") or s.get("ticker")
     ticker = s.get("ticker", "")
+    provider = s.get("provider") or "unknown"
+    model = s.get("model")
 
     with st.container(border=True):
         st.markdown(
             f"**{name}** &nbsp; `{ticker}` &nbsp;&nbsp; {color}[**{signal}**]"
         )
+        caption = f"via `{provider}`"
+        if model:
+            caption += f" · `{model}`"
+        st.caption(caption)
         with st.expander("Why this signal?"):
             st.write(s.get("rationale") or "No rationale available.")
 
@@ -71,7 +77,7 @@ st.set_page_config(
 )
 
 st.title("Agentic DSS for Retail Investors")
-st.caption(f"Model: `{config.MODEL}`")
+st.caption(f"Provider: `{config.PROVIDER}` · Model: `{config.MODEL}`")
 st.metric("FMP requests today", get_fmp_request_count())
 
 if st.button("Run Analysis", type="primary"):
@@ -101,7 +107,12 @@ with tab_latest:
     if not signals:
         st.info("No signals yet. Click **Run Analysis** to evaluate your stocks.")
     else:
-        st.caption(f"Last run: {signals[0]['run_date']}")
+        latest_provider = signals[0].get("provider") or "unknown"
+        latest_model = signals[0].get("model")
+        latest_caption = f"Last run: {signals[0]['run_date']} · via `{latest_provider}`"
+        if latest_model:
+            latest_caption += f" · `{latest_model}`"
+        st.caption(latest_caption)
 
         buy_signals, sell_signals = split_signal_groups(signals)
 

@@ -19,7 +19,7 @@ All logic is driven by rules you write yourself in plain English. No coding requ
 ## Prerequisites
 
 - Python 3.10 or higher
-- An Anthropic API key — sign up at [console.anthropic.com](https://console.anthropic.com)
+- An LLM provider API key. Anthropic is the default; OpenAI, xAI Grok, Groq, and DeepSeek are also supported.
 - A Financial Modeling Prep API key - sign up at [financialmodelingprep.com](https://financialmodelingprep.com)
 
 ---
@@ -50,7 +50,7 @@ source .venv/bin/activate
 ### 3. Install dependencies
 
 ```bash
-pip install -r src/requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 4. Add your API key
@@ -64,11 +64,31 @@ FMP_API_KEY=your_fmp_key_here
 
 Replace the placeholders with your actual Anthropic and FMP API keys. This file is gitignored and will never be committed to version control.
 
+If you choose a different provider in `src/config.py`, set the matching key instead:
+
+```
+OPENAI_API_KEY=your_openai_key_here
+XAI_API_KEY=your_xai_key_here
+GROQ_API_KEY=your_groq_key_here
+DEEPSEEK_API_KEY=your_deepseek_key_here
+```
+
 ---
 
 ## Configuration
 
 Open `src/config.py`. This is the **only file you need to edit**.
+
+### Choose your LLM provider
+
+Set `PROVIDER` to one of `"anthropic"`, `"openai"`, `"grok"`, `"groq"`, or `"deepseek"`, then set `MODEL` to an exact current model ID from that provider's docs:
+
+```python
+PROVIDER = "anthropic"
+MODEL = "claude-sonnet-4-6"
+```
+
+Use a model that supports tool calling. OpenAI-compatible providers use the configured base URLs in `PROVIDER_SETTINGS`; update those values in `config.py` if a provider changes its endpoint.
 
 ### Set your BUY rules
 
@@ -174,7 +194,7 @@ The tests use dummy API keys and monkeypatch all external boundaries, so they do
 5. It writes a plain-language explanation of the signal
 6. Results are saved locally to `db/signals.db` and displayed in the dashboard
 
-Every run is logged to the database for auditability. The dashboard always shows the most recent run.
+Every run is logged to the database for auditability, including the provider and model that produced each signal. The dashboard always shows the most recent run.
 
 ### Market data tools
 
@@ -206,7 +226,8 @@ FMP free-tier constraints matter: the free plan is limited to 250 requests per d
 ```
 src/
 ├── agent/
-│   ├── agent.py          # AI agent loop — one call per stock
+│   ├── agent.py          # Provider-agnostic agent loop, one call per stock
+│   ├── llm.py            # Anthropic and OpenAI-compatible LLM adapters
 │   ├── tools.py          # Financial Modeling Prep data wrappers
 │   └── tool_schemas.py   # Tool definitions for the Claude API
 ├── data/
@@ -228,7 +249,8 @@ src/
 - Designed for **end-of-day analysis** of S&P 500 stocks. Not suitable for intraday trading.
 - Recommendations are based on the rules you define. The system does not predict market movements.
 - Data is sourced from Financial Modeling Prep. Free-plan request limits may apply.
-- The AI agent (Claude) interprets your rules — write them clearly for best results.
+- The selected LLM interprets your rules; write them clearly for best results.
+- Changing providers or models can change agent behavior, so runs from different providers are not directly comparable in research analysis.
 
 ---
 
