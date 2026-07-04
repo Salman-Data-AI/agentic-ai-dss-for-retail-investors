@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import config
+import pandas as pd
 import settings
 
 
@@ -102,6 +103,26 @@ def test_save_api_keys_updates_env_without_clobbering_unrelated_lines(monkeypatc
     assert "OPENAI_API_KEY=new-openai" in text
     assert os.getenv("FMP_API_KEY") == "new-fmp"
     assert os.getenv("OPENAI_API_KEY") == "new-openai"
+
+
+def test_stock_editor_frames_drop_blank_ticker_rows_and_normalize_symbols():
+    watchlist = pd.DataFrame({"ticker": [" aapl ", None, "", "msft"]})
+    portfolio = pd.DataFrame({
+        "ticker": [" jpm ", None, "", "bac"],
+        "qty": [10, None, None, 6],
+        "entry_price": [195.5, None, None, 111],
+        "entry_date": ["2024-11-15", None, None, "2024-01-01"],
+    })
+
+    cleaned_watchlist = settings.clean_watchlist_frame(watchlist)
+    cleaned_portfolio = settings.clean_portfolio_frame(portfolio)
+
+    assert cleaned_watchlist.to_dict(orient="records") == [
+        {"ticker": "AAPL"},
+        {"ticker": "MSFT"},
+    ]
+    assert cleaned_portfolio["ticker"].tolist() == ["JPM", "BAC"]
+    assert cleaned_portfolio.to_dict(orient="records")[0]["qty"] == 10
 
 
 def test_validate_portfolio_columns_rejects_missing_required_columns():
