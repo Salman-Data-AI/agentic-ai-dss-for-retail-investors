@@ -7,7 +7,6 @@ Run: streamlit run dashboard/app.py  (from inside src/)
 
 import os
 import sys
-import subprocess
 
 import pandas as pd
 import streamlit as st
@@ -15,6 +14,7 @@ import streamlit as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
+from main import run_analysis
 from dashboard.logic import build_history_rows, split_signal_groups
 from agent.tools import get_fmp_request_count
 from database import (
@@ -82,17 +82,14 @@ st.metric("FMP requests today", get_fmp_request_count())
 
 if st.button("Run Analysis", type="primary"):
     with st.spinner("Agent evaluating your stocks — this takes ~10-20 seconds..."):
-        proc = subprocess.run(
-            [sys.executable, os.path.join(os.path.dirname(__file__), "..", "main.py")],
-            capture_output=True,
-            text=True,
-        )
-    if proc.returncode == 0:
-        st.success("Analysis complete.")
-        st.rerun()
-    else:
-        st.error("Agent run failed.")
-        st.code(proc.stderr, language="text")
+        try:
+            run_analysis()
+        except Exception as exc:
+            st.error("Agent run failed.")
+            st.code(str(exc), language="text")
+        else:
+            st.success("Analysis complete.")
+            st.rerun()
 
 st.divider()
 

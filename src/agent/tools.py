@@ -13,8 +13,13 @@ from datetime import date
 
 import requests
 from dotenv import load_dotenv
+from paths import executable_env_path, fmp_usage_path, user_env_path
 
 load_dotenv()
+load_dotenv(user_env_path(), override=False)
+exe_env = executable_env_path()
+if exe_env:
+    load_dotenv(exe_env, override=False)
 
 try:
     import truststore
@@ -24,9 +29,7 @@ except ImportError:
     pass
 
 _FMP_BASE_URL = "https://financialmodelingprep.com/stable"
-_USAGE_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "data", "fmp_usage.json")
-)
+_USAGE_PATH = fmp_usage_path()
 _FMP_RUN_REQUEST_COUNT = 0
 _FMP_RUN_CACHE = {}
 _HTTP = requests.Session()

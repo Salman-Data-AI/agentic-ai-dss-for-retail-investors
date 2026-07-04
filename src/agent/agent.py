@@ -6,6 +6,7 @@ The agent fetches only what it needs, evaluates against rules, returns a signal.
 
 import json
 from dotenv import load_dotenv
+from paths import executable_env_path, user_env_path
 
 import config
 from .tools import (
@@ -29,6 +30,10 @@ from .tools import (
 from .llm import create_llm_client
 
 load_dotenv()
+load_dotenv(user_env_path(), override=False)
+exe_env = executable_env_path()
+if exe_env:
+    load_dotenv(exe_env, override=False)
 
 _TOOL_DISPATCH = {
     "get_quote": get_quote,

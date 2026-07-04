@@ -8,10 +8,13 @@ import os
 import json
 import sqlite3
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "signals.db")
+from paths import signals_db_path
+
+_DB_PATH = signals_db_path()
 
 
 def _connect() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
     return sqlite3.connect(_DB_PATH)
 
 

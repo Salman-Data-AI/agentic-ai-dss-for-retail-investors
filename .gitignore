@@ -4,6 +4,9 @@ database/signals.db
 __pycache__/
 .vscode/
 .agents/
+build/
+dist/
+dist-fixed/
 docs/prompts/
 src/data/fmp_usage.json
 .pytest-tmp/
