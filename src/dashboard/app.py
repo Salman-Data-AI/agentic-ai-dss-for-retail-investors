@@ -20,6 +20,8 @@ from agent.tools import get_fmp_request_count
 from settings import (
     PORTFOLIO_COLUMNS,
     WATCHLIST_COLUMNS,
+    clean_portfolio_frame,
+    clean_watchlist_frame,
     load_settings,
     read_env_values,
     save_api_keys,
@@ -287,8 +289,8 @@ with tab_settings:
                     fmp_api_key=fmp_api_key.strip() or None,
                     provider_api_key=provider_api_key.strip() or None,
                 )
-                watchlist_editor[WATCHLIST_COLUMNS].to_csv(watchlist_path, index=False)
-                portfolio_editor[PORTFOLIO_COLUMNS].to_csv(portfolio_path, index=False)
+                clean_watchlist_frame(watchlist_editor).to_csv(watchlist_path, index=False)
+                clean_portfolio_frame(portfolio_editor).to_csv(portfolio_path, index=False)
             except OSError as exc:
                 st.error("Settings could not be saved because the app-data folder is not writable.")
                 st.code(str(exc), language="text")

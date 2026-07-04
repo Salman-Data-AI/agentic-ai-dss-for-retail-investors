@@ -152,6 +152,24 @@ def user_csv_path(filename: str) -> str:
     return user_data_file(filename)
 
 
+def _clean_ticker_column(column):
+    return column.fillna("").astype(str).str.upper().str.strip()
+
+
+def clean_watchlist_frame(df):
+    """Return watchlist rows with usable tickers only."""
+    cleaned = df[WATCHLIST_COLUMNS].copy()
+    cleaned["ticker"] = _clean_ticker_column(cleaned["ticker"])
+    return cleaned[cleaned["ticker"] != ""].reset_index(drop=True)
+
+
+def clean_portfolio_frame(df):
+    """Return portfolio rows with usable tickers only."""
+    cleaned = df[PORTFOLIO_COLUMNS].copy()
+    cleaned["ticker"] = _clean_ticker_column(cleaned["ticker"])
+    return cleaned[cleaned["ticker"] != ""].reset_index(drop=True)
+
+
 def validate_portfolio_columns(columns) -> tuple[bool, str]:
     missing = [column for column in PORTFOLIO_COLUMNS if column not in list(columns)]
     if missing:

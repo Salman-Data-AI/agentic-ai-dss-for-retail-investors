@@ -122,3 +122,43 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     assert calls[1]["rules"].endswith("runtime sell rules")
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"gpt-5.4-nano"}
+
+
+def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_path, monkeypatch):
+    data_dir = workspace_tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "watchlist.csv").write_text("ticker\nAAPL\n\n \nMSFT\n", encoding="utf-8")
+    (data_dir / "portfolio.csv").write_text(
+        "ticker,qty,entry_price,entry_date\nJPM,10,195.50,2024-11-15\n,6,111,2024-01-01\nBAC,6,111,2024-01-01\n",
+        encoding="utf-8",
+    )
+
+    calls = []
+    written = []
+
+    def fake_run_agent(ticker, rules, model):
+        calls.append(ticker)
+        return {
+            "ticker": ticker,
+            "signal": "HOLD",
+            "rationale": "ok",
+            "data_fetched": {"name": ticker},
+        }
+
+    monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
+    monkeypatch.setattr(pipeline, "run_agent", fake_run_agent)
+    monkeypatch.setattr(pipeline, "write_signals", lambda signals: written.extend(signals))
+    monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "load_settings", lambda: {
+        "provider": "openai",
+        "model": "test-model",
+        "buy_rules": "buy rules",
+        "sell_rules": "sell rules",
+    })
+
+    pipeline.run_analysis()
+
+    assert calls == ["AAPL", "MSFT", "JPM", "BAC"]
+    assert [record["ticker"] for record in written] == ["AAPL", "MSFT", "JPM", "BAC"]

@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from settings import load_settings
+from settings import clean_portfolio_frame, clean_watchlist_frame, load_settings
 from agent import run_agent
 from agent.tools import get_fmp_request_count, get_fmp_run_request_count, get_quote
 from database import write_signals
@@ -50,15 +50,14 @@ def _load_watchlist() -> list[str]:
     _ensure_data_files()
     path = os.path.join(_DATA_DIR, "watchlist.csv")
     df = pd.read_csv(path)
-    return df["ticker"].str.upper().str.strip().tolist()
+    return clean_watchlist_frame(df)["ticker"].tolist()
 
 
 def _load_portfolio() -> list[dict]:
     _ensure_data_files()
     path = os.path.join(_DATA_DIR, "portfolio.csv")
     df = pd.read_csv(path)
-    df["ticker"] = df["ticker"].str.upper().str.strip()
-    return df.to_dict(orient="records")
+    return clean_portfolio_frame(df).to_dict(orient="records")
 
 
 def _ensure_name(signal: dict, ticker: str) -> None:
