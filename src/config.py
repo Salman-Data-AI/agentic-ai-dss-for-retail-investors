@@ -11,9 +11,16 @@
 # PROVIDER must be one of: "anthropic", "openai", "grok", "groq", "deepseek".
 PROVIDER = "anthropic"
 
-# Copy the exact current model ID from your selected provider's docs.
-# Tool calling must be supported by the model you choose.
-MODEL = "claude-sonnet-4-6"
+# Default to low-cost, tool-capable models for each provider.
+MODEL = "claude-haiku-4-5-20251001"
+
+PROVIDER_DEFAULT_MODELS = {
+    "anthropic": "claude-haiku-4-5-20251001",
+    "openai": "gpt-5.4-nano",
+    "grok": "grok-4.3",
+    "groq": "llama-3.1-8b-instant",
+    "deepseek": "deepseek-v4-flash",
+}
 
 PROVIDER_SETTINGS = {
     "anthropic": {

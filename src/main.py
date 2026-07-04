@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-import config
+from settings import load_settings
 from agent import run_agent
 from agent.tools import get_fmp_request_count, get_fmp_run_request_count, get_quote
 from database import write_signals
@@ -69,18 +69,19 @@ def _ensure_name(signal: dict, ticker: str) -> None:
 
 
 def run_analysis() -> dict:
+    settings = load_settings()
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     all_signals: list[dict] = []
     run_metadata = {
-        "provider": config.PROVIDER,
-        "model": config.MODEL,
+        "provider": settings["provider"],
+        "model": settings["model"],
     }
 
     # ------------------------------------------------------------------ BUY --
     print("\n-- BUY evaluation (watchlist) ----------------------------------")
     for ticker in _load_watchlist():
         print(f"  {ticker:<8}", end=" ", flush=True)
-        signal = run_agent(ticker=ticker, rules=config.BUY_RULES, model=config.MODEL)
+        signal = run_agent(ticker=ticker, rules=settings["buy_rules"], model=settings["model"])
         _ensure_name(signal, ticker)
         signal.update({"signal_type": "BUY_EVAL", "run_date": run_date, **run_metadata})
         all_signals.append(signal)
@@ -94,10 +95,10 @@ def run_analysis() -> dict:
         rules_with_context = (
             f"My entry price for {ticker} is ${holding['entry_price']}. "
             f"I bought {holding['qty']} shares on {holding['entry_date']}.\n\n"
-            + config.SELL_RULES
+            + settings["sell_rules"]
         )
         print(f"  {ticker:<8}", end=" ", flush=True)
-        signal = run_agent(ticker=ticker, rules=rules_with_context, model=config.MODEL)
+        signal = run_agent(ticker=ticker, rules=rules_with_context, model=settings["model"])
         _ensure_name(signal, ticker)
         signal.update({
             "signal_type": "SELL_EVAL",

@@ -37,7 +37,8 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test-anthropic-key")
 
 
 @pytest.fixture(autouse=True)
-def dummy_api_keys(monkeypatch):
+def dummy_api_keys(monkeypatch, workspace_tmp_path):
+    monkeypatch.setenv("APPDATA", str(workspace_tmp_path / "appdata"))
     monkeypatch.setenv("FMP_API_KEY", "test-fmp-key")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 

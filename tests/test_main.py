@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import main as pipeline
+import settings
 
 
 class FixedDateTime:
@@ -43,10 +42,12 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     monkeypatch.setattr(pipeline, "get_quote", lambda ticker: {"name": f"{ticker} Corp"})
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
-    monkeypatch.setattr(pipeline.config, "BUY_RULES", "buy rules")
-    monkeypatch.setattr(pipeline.config, "SELL_RULES", "sell rules")
-    monkeypatch.setattr(pipeline.config, "MODEL", "test-model")
-    monkeypatch.setattr(pipeline.config, "PROVIDER", "openai")
+    monkeypatch.setattr(pipeline, "load_settings", lambda: {
+        "provider": "openai",
+        "model": "test-model",
+        "buy_rules": "buy rules",
+        "sell_rules": "sell rules",
+    })
 
     result = pipeline.run_analysis()
 
@@ -72,3 +73,52 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
         "fmp_requests_this_run": 0,
         "fmp_requests_today": 0,
     }
+
+
+def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, monkeypatch):
+    data_dir = workspace_tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "watchlist.csv").write_text("ticker\nAAPL\n", encoding="utf-8")
+    (data_dir / "portfolio.csv").write_text(
+        "ticker,qty,entry_price,entry_date\nMSFT,2,100.0,2025-01-02\n",
+        encoding="utf-8",
+    )
+
+    settings.save_settings({
+        "provider": "openai",
+        "model": "runtime-model",
+        "buy_rules": "runtime buy rules",
+        "sell_rules": "runtime sell rules",
+    })
+
+    calls = []
+    written = []
+
+    def fake_run_agent(ticker, rules, model):
+        calls.append({"ticker": ticker, "rules": rules, "model": model})
+        return {
+            "ticker": ticker,
+            "signal": "HOLD",
+            "rationale": "ok",
+            "data_fetched": {"name": ticker},
+        }
+
+    monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
+    monkeypatch.setattr(pipeline, "run_agent", fake_run_agent)
+    monkeypatch.setattr(pipeline, "write_signals", lambda signals: written.extend(signals))
+    monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+
+    pipeline.run_analysis()
+
+    assert calls[0] == {
+        "ticker": "AAPL",
+        "rules": "runtime buy rules",
+        "model": "gpt-5.4-nano",
+    }
+    assert calls[1]["ticker"] == "MSFT"
+    assert calls[1]["model"] == "gpt-5.4-nano"
+    assert calls[1]["rules"].endswith("runtime sell rules")
+    assert {record["provider"] for record in written} == {"openai"}
+    assert {record["model"] for record in written} == {"gpt-5.4-nano"}

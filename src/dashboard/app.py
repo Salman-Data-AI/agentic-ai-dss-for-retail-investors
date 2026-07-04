@@ -17,6 +17,17 @@ import config
 from main import run_analysis
 from dashboard.logic import build_history_rows, split_signal_groups
 from agent.tools import get_fmp_request_count
+from settings import (
+    PORTFOLIO_COLUMNS,
+    WATCHLIST_COLUMNS,
+    load_settings,
+    read_env_values,
+    save_api_keys,
+    save_settings,
+    user_csv_path,
+    validate_portfolio_columns,
+)
+from paths import user_data_dir
 from database import (
     read_latest_signals,
     read_filtered_signals,
@@ -77,7 +88,8 @@ st.set_page_config(
 )
 
 st.title("Agentic DSS for Retail Investors")
-st.caption(f"Provider: `{config.PROVIDER}` · Model: `{config.MODEL}`")
+current_settings = load_settings()
+st.caption(f"Provider: `{current_settings['provider']}` · Model: `{current_settings['model']}`")
 st.metric("FMP requests today", get_fmp_request_count())
 
 if st.button("Run Analysis", type="primary"):
@@ -94,7 +106,7 @@ if st.button("Run Analysis", type="primary"):
 st.divider()
 
 # ------------------------------------------------------------------- tabs
-tab_latest, tab_history = st.tabs(["Latest Run", "History"])
+tab_latest, tab_history, tab_settings = st.tabs(["Latest Run", "History", "Settings"])
 
 
 # ---------------------------------------------------------- Tab 1: Latest
@@ -197,3 +209,88 @@ with tab_history:
                 },
             )
             st.caption(f"{len(df)} records")
+
+
+# -------------------------------------------------------- Tab 3: Settings
+with tab_settings:
+    settings = load_settings()
+    env_values = read_env_values()
+    st.caption(f"Settings folder: `{user_data_dir()}`")
+    provider_options = list(config.PROVIDER_SETTINGS)
+    selected_provider = st.selectbox(
+        "LLM provider",
+        options=provider_options,
+        index=provider_options.index(settings["provider"])
+        if settings["provider"] in provider_options
+        else 0,
+    )
+    model = st.text_input(
+        "Model",
+        value=settings["model"] if selected_provider == settings["provider"] else config.PROVIDER_DEFAULT_MODELS[selected_provider],
+        disabled=True,
+        help="Automatically selected low-cost model for the chosen provider.",
+    )
+
+    provider_key_env = config.PROVIDER_SETTINGS[selected_provider]["api_key_env"]
+    fmp_label = "FMP API key"
+    if env_values.get("FMP_API_KEY"):
+        fmp_label += " (saved)"
+    provider_label = provider_key_env
+    if env_values.get(provider_key_env):
+        provider_label += " (saved)"
+
+    fmp_api_key = st.text_input(fmp_label, type="password", value="")
+    provider_api_key = st.text_input(provider_label, type="password", value="")
+
+    buy_rules = st.text_area("Buy rules", value=settings["buy_rules"], height=180)
+    sell_rules = st.text_area("Sell rules", value=settings["sell_rules"], height=220)
+
+    watchlist_path = user_csv_path("watchlist.csv")
+    portfolio_path = user_csv_path("portfolio.csv")
+    watchlist_df = pd.read_csv(watchlist_path)
+    portfolio_df = pd.read_csv(portfolio_path)
+
+    watchlist_editor = st.data_editor(
+        watchlist_df,
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True,
+        column_order=WATCHLIST_COLUMNS,
+        key="watchlist_editor",
+    )
+    portfolio_editor = st.data_editor(
+        portfolio_df,
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True,
+        column_order=PORTFOLIO_COLUMNS,
+        key="portfolio_editor",
+    )
+
+    if st.button("Save settings", type="primary"):
+        valid_portfolio, message = validate_portfolio_columns(portfolio_editor.columns)
+        valid_watchlist = "ticker" in watchlist_editor.columns
+        if not valid_watchlist:
+            st.error("Watchlist must include a ticker column.")
+        elif not valid_portfolio:
+            st.error(message)
+        else:
+            try:
+                save_settings({
+                    "provider": selected_provider,
+                    "model": model,
+                    "buy_rules": buy_rules,
+                    "sell_rules": sell_rules,
+                })
+                save_api_keys(
+                    provider=selected_provider,
+                    fmp_api_key=fmp_api_key.strip() or None,
+                    provider_api_key=provider_api_key.strip() or None,
+                )
+                watchlist_editor[WATCHLIST_COLUMNS].to_csv(watchlist_path, index=False)
+                portfolio_editor[PORTFOLIO_COLUMNS].to_csv(portfolio_path, index=False)
+            except OSError as exc:
+                st.error("Settings could not be saved because the app-data folder is not writable.")
+                st.code(str(exc), language="text")
+            else:
+                st.success("Settings saved.")

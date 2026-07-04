@@ -188,6 +188,7 @@ def test_openai_adapter_renders_tools_and_appends_tool_results():
         user_content="Evaluate stock: AAPL",
         api_key="test-key",
         base_url="https://example.test/v1",
+        provider="groq",
         client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))),
     )
 
@@ -196,6 +197,8 @@ def test_openai_adapter_renders_tools_and_appends_tool_results():
 
     assert response.tool_calls == [ToolCall(id="call-1", name="get_quote", arguments={"ticker": "AAPL"})]
     sent_tools = fake_create.call_args.kwargs["tools"]
+    assert fake_create.call_args.kwargs["max_tokens"] == 1024
+    assert "max_completion_tokens" not in fake_create.call_args.kwargs
     assert sent_tools[0]["type"] == "function"
     assert sent_tools[0]["function"]["parameters"]["type"] == "object"
     assert adapter.messages[-1] == {
@@ -203,6 +206,31 @@ def test_openai_adapter_renders_tools_and_appends_tool_results():
         "tool_call_id": "call-1",
         "content": '{"price": 195.0}',
     }
+
+
+def test_openai_adapter_uses_max_completion_tokens_for_openai_models():
+    fake_create = Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason="stop",
+        message=SimpleNamespace(
+            content='{"signal":"HOLD","rationale":"ok","data_fetched":{}}',
+            tool_calls=None,
+        ),
+    )]))
+    adapter = OpenAICompatibleAdapter(
+        model="gpt-5.4-nano",
+        system="system",
+        user_content="Evaluate stock: AAPL",
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        provider="openai",
+        client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))),
+    )
+
+    response = adapter.next_step()
+
+    assert response.final_text == '{"signal":"HOLD","rationale":"ok","data_fetched":{}}'
+    assert fake_create.call_args.kwargs["max_completion_tokens"] == 1024
+    assert "max_tokens" not in fake_create.call_args.kwargs
 
 
 def test_error_contract():
