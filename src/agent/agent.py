@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from paths import executable_env_path, user_env_path
 
 import config
+from settings import load_settings
 from .tools import (
     get_analyst_estimates,
     get_analyst_rating,
@@ -97,7 +98,10 @@ def run_agent(ticker: str, rules: str, model: str = "claude-sonnet-4-6") -> dict
         dict with keys: ticker, signal, rationale, data_fetched
     """
     system = _SYSTEM_PROMPT.format(rules=rules)
-    provider = getattr(config, "PROVIDER", "anthropic")
+    settings = load_settings()
+    provider = settings.get("provider") or getattr(config, "PROVIDER", "anthropic")
+    if model == "claude-sonnet-4-6":
+        model = settings.get("model") or model
     provider_settings = getattr(config, "PROVIDER_SETTINGS", {}).get(provider)
     if not provider_settings:
         return _error(

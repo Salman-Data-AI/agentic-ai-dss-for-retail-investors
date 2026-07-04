@@ -34,6 +34,46 @@ def test_user_data_dir_uses_appdata_and_creates_app_folder(workspace_tmp_path, m
     assert Path(paths.user_env_path()) == data_dir / ".env"
 
 
+def test_user_data_dir_skips_non_writable_appdata(workspace_tmp_path, monkeypatch):
+    appdata = workspace_tmp_path / "appdata"
+    localappdata = workspace_tmp_path / "localappdata"
+    monkeypatch.setenv("APPDATA", str(appdata))
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+
+    original_verify = paths._verify_writable
+
+    def fake_verify(path):
+        if path == appdata / paths.APP_NAME:
+            raise PermissionError("blocked")
+        original_verify(path)
+
+    monkeypatch.setattr(paths, "_verify_writable", fake_verify)
+
+    data_dir = Path(paths.user_data_dir())
+
+    assert data_dir == localappdata / paths.APP_NAME
+    assert data_dir.is_dir()
+
+
+def test_user_data_dir_uses_workspace_fallback_before_temp(workspace_tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENTIC_DSS_USER_DATA_DIR", raising=False)
+    monkeypatch.setenv("APPDATA", str(workspace_tmp_path / "appdata"))
+    monkeypatch.setenv("LOCALAPPDATA", str(workspace_tmp_path / "localappdata"))
+    monkeypatch.setattr(paths.tempfile, "gettempdir", lambda: str(workspace_tmp_path / "temp"))
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    expected = Path(paths.__file__).resolve().parents[1] / ".app-data" / paths.APP_NAME
+
+    def fake_verify(path):
+        if path != expected:
+            raise PermissionError("blocked")
+        path.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(paths, "_verify_writable", fake_verify)
+
+    assert Path(paths.user_data_dir()) == expected
+
+
 def test_seed_user_csv_defaults_copies_missing_files(workspace_tmp_path, monkeypatch):
     appdata = workspace_tmp_path / "appdata"
     bundle = workspace_tmp_path / "bundle"

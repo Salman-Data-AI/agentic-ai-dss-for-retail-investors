@@ -4,6 +4,7 @@ database/signals.db
 __pycache__/
 .vscode/
 .agents/
+.app-data/
 build/
 dist/
 dist-fixed/

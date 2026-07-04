@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 APP_NAME = "Agentic AI DSS for Retail Investors"
+_WRITE_TEST_FILENAME = ".write-test"
 
 
 def is_frozen() -> bool:
@@ -27,23 +28,39 @@ def bundle_dir() -> str:
 def user_data_dir() -> str:
     """Return the writable per-user application data directory."""
     candidates = [
+        os.environ.get("AGENTIC_DSS_USER_DATA_DIR"),
         os.environ.get("APPDATA"),
         os.environ.get("LOCALAPPDATA"),
         str(Path.home() / "AppData" / "Roaming"),
-        tempfile.gettempdir(),
     ]
+    if not is_frozen():
+        candidates.append(str(Path(__file__).resolve().parents[1] / ".app-data"))
+    candidates.append(tempfile.gettempdir())
 
     for base in candidates:
         if not base:
             continue
-        path = Path(base) / APP_NAME
+        path = Path(base)
+        if path.name != APP_NAME:
+            path = path / APP_NAME
         try:
             path.mkdir(parents=True, exist_ok=True)
+            _verify_writable(path)
         except OSError:
             continue
         return str(path)
 
     raise RuntimeError("Could not create a writable application data directory")
+
+
+def _verify_writable(path: Path) -> None:
+    probe = path / _WRITE_TEST_FILENAME
+    probe.write_text("ok", encoding="utf-8")
+    probe.read_text(encoding="utf-8")
+    try:
+        probe.unlink()
+    except OSError:
+        pass
 
 
 def bundled_data_dir() -> str:

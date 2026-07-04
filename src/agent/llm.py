@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import sys
 from typing import Protocol
 
 from anthropic import Anthropic
@@ -106,6 +107,7 @@ class OpenAICompatibleAdapter:
         user_content: str,
         api_key: str,
         base_url: str,
+        provider: str = "openai-compatible",
         client=None,
         max_tokens: int = 1024,
     ) -> None:
@@ -115,6 +117,7 @@ class OpenAICompatibleAdapter:
             raise RuntimeError("Base URL is not configured for the selected provider")
 
         self.model = model
+        self.provider = provider
         self.max_tokens = max_tokens
         self.tools = self._render_tools(TOOL_SCHEMAS)
         self.messages = [
@@ -124,12 +127,17 @@ class OpenAICompatibleAdapter:
         self.client = client or self._build_client(api_key=api_key, base_url=base_url)
 
     def next_step(self) -> LLMResponse:
+        token_limit = (
+            {"max_completion_tokens": self.max_tokens}
+            if self.provider == "openai"
+            else {"max_tokens": self.max_tokens}
+        )
         response = self.client.chat.completions.create(
             model=self.model,
-            max_tokens=self.max_tokens,
             messages=self.messages,
             tools=self.tools,
             tool_choice="auto",
+            **token_limit,
         )
         choice = response.choices[0]
         message = choice.message
@@ -168,7 +176,8 @@ class OpenAICompatibleAdapter:
         except ImportError as exc:
             raise RuntimeError(
                 "The openai package is required for PROVIDER values openai, grok, groq, and deepseek. "
-                "Install dependencies with: pip install -r requirements.txt"
+                "Install dependencies in the Python environment running the app with: "
+                f"{sys.executable} -m pip install -r requirements.txt"
             ) from exc
         return OpenAI(api_key=api_key, base_url=base_url)
 
@@ -249,6 +258,7 @@ def create_llm_client(
             user_content=user_content,
             api_key=api_key,
             base_url=provider_settings["base_url"],
+            provider=normalized,
         )
 
     raise RuntimeError(

@@ -8,6 +8,13 @@ from agent import llm
 
 def test_provider_settings_cover_supported_providers():
     assert set(config.PROVIDER_SETTINGS) == {"anthropic", "openai", "grok", "groq", "deepseek"}
+    assert config.PROVIDER_DEFAULT_MODELS == {
+        "anthropic": "claude-haiku-4-5-20251001",
+        "openai": "gpt-5.4-nano",
+        "grok": "grok-4.3",
+        "groq": "llama-3.1-8b-instant",
+        "deepseek": "deepseek-v4-flash",
+    }
     assert config.PROVIDER_SETTINGS["openai"] == {
         "api_key_env": "OPENAI_API_KEY",
         "base_url": "https://api.openai.com/v1",
