@@ -14,28 +14,47 @@ from datetime import datetime
 
 import pandas as pd
 from dotenv import load_dotenv
+from paths import (
+    executable_env_path,
+    seed_user_csv_defaults,
+    user_data_dir,
+    user_env_path,
+)
 
 load_dotenv()
+load_dotenv(user_env_path(), override=False)
+exe_env = executable_env_path()
+if exe_env:
+    load_dotenv(exe_env, override=False)
 
 # Allow running from project root or from src/
 sys.path.insert(0, os.path.dirname(__file__))
-sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import config
 from agent import run_agent
 from agent.tools import get_fmp_request_count, get_fmp_run_request_count, get_quote
 from database import write_signals
 
-_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+_USER_DATA_DIR = user_data_dir()
+_DATA_DIR = _USER_DATA_DIR
+
+
+def _ensure_data_files() -> None:
+    if os.path.abspath(_DATA_DIR) == os.path.abspath(_USER_DATA_DIR):
+        seed_user_csv_defaults()
 
 
 def _load_watchlist() -> list[str]:
+    _ensure_data_files()
     path = os.path.join(_DATA_DIR, "watchlist.csv")
     df = pd.read_csv(path)
     return df["ticker"].str.upper().str.strip().tolist()
 
 
 def _load_portfolio() -> list[dict]:
+    _ensure_data_files()
     path = os.path.join(_DATA_DIR, "portfolio.csv")
     df = pd.read_csv(path)
     df["ticker"] = df["ticker"].str.upper().str.strip()
@@ -49,7 +68,7 @@ def _ensure_name(signal: dict, ticker: str) -> None:
     signal["data_fetched"]["name"] = quote.get("name", ticker)
 
 
-def main() -> None:
+def run_analysis() -> dict:
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     all_signals: list[dict] = []
     run_metadata = {
@@ -95,6 +114,16 @@ def main() -> None:
     print(f"FMP requests this run: {get_fmp_run_request_count()}")
     print(f"FMP requests today:    {get_fmp_request_count()}")
     print("  Launch dashboard:  streamlit run src/dashboard/app.py\n")
+    return {
+        "run_date": run_date,
+        "signal_count": len(all_signals),
+        "fmp_requests_this_run": get_fmp_run_request_count(),
+        "fmp_requests_today": get_fmp_request_count(),
+    }
+
+
+def main() -> None:
+    run_analysis()
 
 
 if __name__ == "__main__":

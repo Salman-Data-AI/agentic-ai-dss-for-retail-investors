@@ -170,6 +170,10 @@ python src/main.py
 
 Results are printed to the terminal and saved to the database. You can launch the dashboard afterwards to view them.
 
+### Packaged app self-test
+
+After building the Windows onedir app, run `dist\AgenticDSS\AgenticDSS.exe --selftest` to check live FMP and LLM connectivity from inside the frozen executable without launching the UI.
+
 ---
 
 ## Running tests

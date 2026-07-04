@@ -48,7 +48,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     monkeypatch.setattr(pipeline.config, "MODEL", "test-model")
     monkeypatch.setattr(pipeline.config, "PROVIDER", "openai")
 
-    pipeline.main()
+    result = pipeline.run_analysis()
 
     assert [call["ticker"] for call in calls] == ["AAPL", "MSFT", "JPM"]
     assert calls[0] == {"ticker": "AAPL", "rules": "buy rules", "model": "test-model"}
@@ -66,3 +66,9 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert written[1]["data_fetched"]["name"] == "MSFT Corp"
     assert written[2]["data_fetched"]["name"] == "JPM Corp"
     assert written[2]["entry_price"] == 195.5
+    assert result == {
+        "run_date": "2026-07-02 12:34:56",
+        "signal_count": 3,
+        "fmp_requests_this_run": 0,
+        "fmp_requests_today": 0,
+    }
