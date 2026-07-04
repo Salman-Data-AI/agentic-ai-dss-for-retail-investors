@@ -9,3 +9,4 @@ src/data/fmp_usage.json
 .pytest-tmp/
 .pytest_cache/
 pytest-cache-files-*/
+docs/misc/
