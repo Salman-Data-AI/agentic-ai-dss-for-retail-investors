@@ -23,6 +23,11 @@ def runtime_submodule(name):
     return not any(part in name for part in excluded_parts)
 
 datas = []
+excluded_data_files = {
+    os.path.normpath(".env"),
+    os.path.normpath("database/signals.db"),
+    os.path.normpath("data/fmp_usage.json"),
+}
 for root, dirs, files in os.walk("src"):
     dirs[:] = [dirname for dirname in dirs if dirname != "__pycache__"]
     for filename in files:
@@ -30,13 +35,12 @@ for root, dirs, files in os.walk("src"):
         rel_from_src = os.path.normpath(os.path.relpath(rel_path, "src"))
         if filename.endswith(".pyc"):
             continue
-        if rel_from_src in {
-            os.path.normpath("database/signals.db"),
-            os.path.normpath("data/fmp_usage.json"),
-        }:
+        if rel_from_src in excluded_data_files or filename == ".env":
             continue
         target_dir = os.path.join("src", os.path.dirname(rel_from_src))
         datas.append((rel_path, target_dir))
+if any(os.path.basename(source) == ".env" for source, _ in datas):
+    raise RuntimeError("Refusing to bundle .env in PyInstaller data files")
 datas += collect_data_files("streamlit")
 datas += collect_data_files("certifi")
 datas += collect_dynamic_libs("numpy")
