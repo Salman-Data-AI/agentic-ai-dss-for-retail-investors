@@ -185,19 +185,28 @@ The dashboard is a Streamlit interface for running and reviewing analyses.
 
 Responsibilities:
 
-- Display the selected Anthropic model.
+- Display the selected provider and model.
 - Provide a `Run Analysis` button.
-- Execute `src/main.py` as a subprocess.
+- Call `run_analysis()` in process.
 - Read the latest signals from SQLite.
 - Split results into watchlist BUY evaluations and portfolio SELL evaluations.
 - Normalize legacy stored signal labels for display.
 - Render each result as a card with signal, rationale, and underlying data.
+- Render a static Metrics Reference tab from hardcoded reference rows and a one-time AAPL FMP snapshot.
+- Provide a Settings tab for provider/rule/API-key/CSV editing.
 
 The dashboard uses progressive disclosure:
 
 - Signal and ticker are visible immediately.
 - Rationale is shown in an expander.
 - Data used is shown in a separate expander. Flat scalar values render as compact metric columns; nested bundle values render as JSON for readability.
+
+Dashboard tabs:
+
+- `Latest Run`: reads and renders the newest stored analysis results.
+- `History`: requires at least one filter before reading matching audit rows.
+- `Metrics Reference`: static educational content for rule writing. It does not call FMP, contact an LLM, run analysis, or read/write SQLite at dashboard render time. Its hardcoded AAPL values were fetched once from FMP on 2026-07-05 at 16:05 UTC with `python scripts/fetch_metrics_snapshot.py AAPL`.
+- `Settings`: edits provider, rules, API keys, watchlist, and portfolio inputs.
 
 ## Data Flow
 
@@ -237,7 +246,7 @@ src/database/signals.db
 User clicks Run Analysis
       |
       v
-Streamlit subprocess runs src/main.py
+Streamlit calls run_analysis() in process
       |
       v
 Signals are written to SQLite
@@ -345,7 +354,7 @@ The system handles errors at several levels:
 
 - Market data functions return `{"error": "..."}` on fetch, permission, rate-limit, empty-response, invalid-response, or network failure.
 - The agent returns an `ERROR` signal if Claude output cannot be parsed as JSON.
-- The dashboard reports subprocess failure and displays stderr.
+- The dashboard catches analysis failures and displays the exception text.
 - SQLite table initialization runs before reads and writes, so a missing database file is created automatically.
 
 ## Extension Points
