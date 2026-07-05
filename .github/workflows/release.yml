@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build installer
+        id: build
+        uses: ./.github/actions/build-installer
+
+      # CI builds can differ from local builds; smoke-test this installer once
+      # on Windows before treating it as a participant distribution artifact.
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ steps.build.outputs.setup-exe }}
+          body_path: installer/RELEASE_NOTES.md
+          fail_on_unmatched_files: true
