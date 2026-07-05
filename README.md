@@ -8,7 +8,7 @@ A rule-based, AI-powered Decision Support System that evaluates stocks against y
 
 - Evaluates stocks on your **watchlist** against your BUY rules
 - Evaluates stocks in your **portfolio** against your SELL rules
-- Generates a **BUY / SELL / HOLD** signal for each stock
+- Generates **BUY / SKIP** signals for watchlist stocks and **SELL / HOLD** signals for portfolio stocks
 - Explains *why* each signal was generated in plain English
 - Shows the underlying data behind every recommendation
 
@@ -135,6 +135,11 @@ MSFT
 GOOGL
 ```
 
+Watchlist tickers are entry candidates. They are evaluated only against your BUY rules and return either:
+
+- `BUY`: the stock meets your entry criteria now.
+- `SKIP`: the stock does not meet your entry criteria now; skip it for now.
+
 ### Portfolio — SELL evaluation
 
 Edit `src/data/portfolio.csv`. One holding per row:
@@ -146,6 +151,11 @@ META,5,520.00,2024-10-03
 ```
 
 Use the date format `YYYY-MM-DD`.
+
+Portfolio holdings are current positions. They are evaluated only against your SELL rules and return either:
+
+- `SELL`: the holding meets your exit criteria now.
+- `HOLD`: the holding does not meet your exit criteria now.
 
 ---
 
@@ -194,7 +204,7 @@ The tests use dummy API keys and monkeypatch all external boundaries, so they do
 1. The agent reads your rules from `config.py`
 2. For each stock, it identifies which data points your rules reference
 3. It fetches only those data points from Financial Modeling Prep
-4. It evaluates the data against your rules and decides the signal
+4. It evaluates the data against your rules and decides the signal: `BUY` or `SKIP` for watchlist stocks, `SELL` or `HOLD` for portfolio holdings
 5. It writes a plain-language explanation of the signal
 6. Results are saved locally to `db/signals.db` and displayed in the dashboard
 

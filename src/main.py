@@ -80,7 +80,12 @@ def run_analysis() -> dict:
     print("\n-- BUY evaluation (watchlist) ----------------------------------")
     for ticker in _load_watchlist():
         print(f"  {ticker:<8}", end=" ", flush=True)
-        signal = run_agent(ticker=ticker, rules=settings["buy_rules"], model=settings["model"])
+        signal = run_agent(
+            ticker=ticker,
+            rules=settings["buy_rules"],
+            model=settings["model"],
+            evaluation_type="BUY_EVAL",
+        )
         _ensure_name(signal, ticker)
         signal.update({"signal_type": "BUY_EVAL", "run_date": run_date, **run_metadata})
         all_signals.append(signal)
@@ -97,7 +102,12 @@ def run_analysis() -> dict:
             + settings["sell_rules"]
         )
         print(f"  {ticker:<8}", end=" ", flush=True)
-        signal = run_agent(ticker=ticker, rules=rules_with_context, model=settings["model"])
+        signal = run_agent(
+            ticker=ticker,
+            rules=rules_with_context,
+            model=settings["model"],
+            evaluation_type="SELL_EVAL",
+        )
         _ensure_name(signal, ticker)
         signal.update({
             "signal_type": "SELL_EVAL",

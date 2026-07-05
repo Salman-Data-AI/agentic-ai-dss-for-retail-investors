@@ -42,6 +42,7 @@ from database import (
 def _render_card(s: dict) -> None:
     _SIGNAL_COLORS = {
         "BUY":   ":green",
+        "SKIP":  ":gray",
         "SELL":  ":red",
         "HOLD":  ":orange",
         "ERROR": ":gray",
@@ -130,7 +131,7 @@ with tab_latest:
         col_buy, col_sell = st.columns(2)
 
         with col_buy:
-            st.subheader("Watchlist — BUY / HOLD evaluation")
+            st.subheader("Watchlist — BUY / SKIP evaluation")
             if buy_signals:
                 for s in buy_signals:
                     _render_card(s)
@@ -138,7 +139,7 @@ with tab_latest:
                 st.caption("No watchlist results.")
 
         with col_sell:
-            st.subheader("Portfolio — SELL evaluation")
+            st.subheader("Portfolio — SELL / HOLD evaluation")
             if sell_signals:
                 for s in sell_signals:
                     _render_card(s)
@@ -196,6 +197,7 @@ with tab_history:
             def _colour_signal(val):
                 return {
                     "BUY":   "color: green; font-weight: bold",
+                    "SKIP":  "color: gray; font-weight: bold",
                     "SELL":  "color: red; font-weight: bold",
                     "HOLD":  "color: orange; font-weight: bold",
                     "ERROR": "color: grey",

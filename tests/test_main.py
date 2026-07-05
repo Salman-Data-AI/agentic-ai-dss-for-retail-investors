@@ -26,11 +26,16 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     calls = []
     written = []
 
-    def fake_run_agent(ticker, rules, model):
-        calls.append({"ticker": ticker, "rules": rules, "model": model})
+    def fake_run_agent(ticker, rules, model, evaluation_type):
+        calls.append({
+            "ticker": ticker,
+            "rules": rules,
+            "model": model,
+            "evaluation_type": evaluation_type,
+        })
         return {
             "ticker": ticker,
-            "signal": "HOLD",
+            "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
             "rationale": f"{ticker} rationale",
             "data_fetched": {},
         }
@@ -52,11 +57,22 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     result = pipeline.run_analysis()
 
     assert [call["ticker"] for call in calls] == ["AAPL", "MSFT", "JPM"]
-    assert calls[0] == {"ticker": "AAPL", "rules": "buy rules", "model": "test-model"}
-    assert calls[1] == {"ticker": "MSFT", "rules": "buy rules", "model": "test-model"}
+    assert calls[0] == {
+        "ticker": "AAPL",
+        "rules": "buy rules",
+        "model": "test-model",
+        "evaluation_type": "BUY_EVAL",
+    }
+    assert calls[1] == {
+        "ticker": "MSFT",
+        "rules": "buy rules",
+        "model": "test-model",
+        "evaluation_type": "BUY_EVAL",
+    }
     assert "My entry price for JPM is $195.5." in calls[2]["rules"]
     assert "I bought 10 shares on 2024-11-15." in calls[2]["rules"]
     assert calls[2]["rules"].endswith("sell rules")
+    assert calls[2]["evaluation_type"] == "SELL_EVAL"
 
     assert len(written) == 3
     assert [record["signal_type"] for record in written] == ["BUY_EVAL", "BUY_EVAL", "SELL_EVAL"]
@@ -94,11 +110,16 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     calls = []
     written = []
 
-    def fake_run_agent(ticker, rules, model):
-        calls.append({"ticker": ticker, "rules": rules, "model": model})
+    def fake_run_agent(ticker, rules, model, evaluation_type):
+        calls.append({
+            "ticker": ticker,
+            "rules": rules,
+            "model": model,
+            "evaluation_type": evaluation_type,
+        })
         return {
             "ticker": ticker,
-            "signal": "HOLD",
+            "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
             "rationale": "ok",
             "data_fetched": {"name": ticker},
         }
@@ -116,9 +137,11 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
         "ticker": "AAPL",
         "rules": "runtime buy rules",
         "model": "gpt-5.4-nano",
+        "evaluation_type": "BUY_EVAL",
     }
     assert calls[1]["ticker"] == "MSFT"
     assert calls[1]["model"] == "gpt-5.4-nano"
+    assert calls[1]["evaluation_type"] == "SELL_EVAL"
     assert calls[1]["rules"].endswith("runtime sell rules")
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"gpt-5.4-nano"}
@@ -136,11 +159,11 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     calls = []
     written = []
 
-    def fake_run_agent(ticker, rules, model):
+    def fake_run_agent(ticker, rules, model, evaluation_type):
         calls.append(ticker)
         return {
             "ticker": ticker,
-            "signal": "HOLD",
+            "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
             "rationale": "ok",
             "data_fetched": {"name": ticker},
         }
