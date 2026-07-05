@@ -2,12 +2,12 @@
 
 ## Overview
 
-Agentic DSS for Retail Investors is a Python-based decision support system that evaluates stocks against investor-defined BUY and SELL rules. It combines deterministic application flow with an LLM-powered agent that decides which market-data tools are required for each rule evaluation.
+Agentic DSS for Retail Investors is a Python-based decision support system that evaluates stocks against investor-defined BUY and SELL rules. It combines deterministic rule-level tool planning with an LLM-powered evaluator that turns prefetched market data into structured signals.
 
 The system has four main layers:
 
 - Input and configuration: plain-English investment rules plus CSV watchlist and portfolio files.
-- Agent orchestration: Anthropic Claude evaluates one ticker at a time and calls tools only for required metrics.
+- Agent orchestration: the app plans required tools once per rule set, fetches those metrics for each ticker, and asks the selected LLM to evaluate the prefetched data.
 - Market data tools: FMP-backed functions fetch quote, technical, fundamental, profile, performance, analyst, and earnings data.
 - Persistence and presentation: SQLite stores each run, and Streamlit displays the latest results.
 
@@ -16,7 +16,8 @@ The system has four main layers:
 ```text
 src/
 |-- agent/
-|   |-- agent.py          # Core Anthropic tool-use loop
+|   |-- agent.py          # Signal evaluation from prefetched market data
+|   |-- tool_planner.py   # Rule-level fixed tool planning
 |   |-- tools.py          # Market data and indicator functions
 |   `-- tool_schemas.py   # Tool definitions exposed to Claude
 |-- dashboard/
@@ -50,7 +51,10 @@ Responsibilities:
 - Add `src/` to `sys.path` so modules can be imported from either the project root or `src/`.
 - Read `src/data/watchlist.csv` for BUY evaluations.
 - Read `src/data/portfolio.csv` for SELL evaluations.
-- Call `run_agent()` once per ticker.
+- Plan the required BUY and SELL tools once per run.
+- Fetch the planned metrics for each ticker.
+- Fetch ticker data in parallel using a small worker pool.
+- Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group.
 - Add metadata such as `signal_type`, `run_date`, company name, and entry price.
 - Persist all signals through `write_signals()`.
 
@@ -59,7 +63,7 @@ The pipeline produces two categories of output:
 - `BUY_EVAL`: generated from watchlist tickers and `BUY_RULES`; valid successful signals are `BUY` and `SKIP`.
 - `SELL_EVAL`: generated from portfolio holdings and `SELL_RULES`; valid successful signals are `SELL` and `HOLD`.
 
-For SELL evaluations, `main.py` injects holding-specific context into the rules, including entry price, quantity, and entry date. This lets the agent evaluate take-profit and stop-loss rules that depend on the investor's purchase price.
+For SELL evaluations, `main.py` includes holding-specific context in the per-ticker fetched-data payload, including entry price, quantity, and entry date. This lets the evaluator apply take-profit and stop-loss rules that depend on the investor's purchase price while still using one SELL batch call.
 
 ### Configuration: `src/config.py`
 
@@ -73,24 +77,24 @@ It defines:
 
 The rules are intentionally written as natural language so the user can change strategy criteria without editing application logic.
 
-### Agent Loop: `src/agent/agent.py`
+### Tool Planning And Evaluation
 
-`run_agent(ticker, rules, model, evaluation_type)` is the core agent function.
+`src/agent/tool_planner.py::plan_tools_for_rules(rules)` converts each rule string into a fixed tool plan for that run. The BUY plan is reused for every watchlist ticker, and the SELL plan is reused for every portfolio holding.
 
-The function:
+`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, model, evaluation_type)` is the LLM evaluation function. It evaluates a group of prefetched ticker payloads in one provider call.
+
+The flow:
 
 1. Builds a system prompt containing the investor's rules.
-2. Sends the ticker to Anthropic Claude.
-3. Allows Claude to request market-data tools using the schemas in `tool_schemas.py`.
-4. Dispatches requested tools to local Python functions in `tools.py`.
-5. Sends tool results back to Claude.
-6. Repeats until Claude returns a final JSON object.
-7. Parses the JSON and appends the ticker.
+2. Includes the data already fetched by the fixed tool plan.
+3. Calls the selected provider with no tools exposed.
+4. Parses the final JSON array and maps each item back to its input ticker.
 
-The agent is instructed to return exactly this shape:
+The batch evaluator is instructed to return one object per ticker with exactly this shape:
 
 ```json
 {
+  "ticker": "AAPL",
   "signal": "BUY | SKIP for BUY_EVAL, or SELL | HOLD for SELL_EVAL",
   "rationale": "Plain-English explanation",
   "data_fetched": {
@@ -99,7 +103,7 @@ The agent is instructed to return exactly this shape:
 }
 ```
 
-The `evaluation_type` argument selects the allowed signal contract. `BUY_EVAL` prompts the model to choose only `BUY` or `SKIP`; `SELL_EVAL` prompts it to choose only `SELL` or `HOLD`. After parsing the JSON, `run_agent()` validates the returned `signal` against that contract. If parsing fails, the model returns a signal outside the active contract, or the agent receives an unexpected stop reason, `_error()` returns a structured `ERROR` signal. This keeps downstream storage and dashboard rendering consistent.
+The `evaluation_type` argument selects the allowed signal contract. `BUY_EVAL` prompts the model to choose only `BUY` or `SKIP`; `SELL_EVAL` prompts it to choose only `SELL` or `HOLD`. After parsing the JSON, `evaluate_signals_from_data_batch()` validates each returned `signal` against that contract. If parsing fails, the model returns a signal outside the active contract, omits a ticker, or the evaluator receives an unexpected stop reason, `_error()` returns a structured `ERROR` signal for the affected ticker. This keeps downstream storage and dashboard rendering consistent.
 
 ### Tool Schemas: `src/agent/tool_schemas.py`
 
@@ -124,7 +128,7 @@ Available tools:
 - `get_analyst_estimates`: annual revenue, EPS, EBITDA estimates, and EPS analyst count.
 - `get_earnings`: past and upcoming earnings rows with EPS and revenue estimates/actuals.
 
-Tool descriptions are important because Claude uses them to decide which tool is relevant to the user's rules.
+Tool descriptions document the data surface and are still used by adapter tests and lower-level provider support. The main analysis path uses `tool_planner.py` to select tools before the LLM call.
 
 ### Market Data Tools: `src/agent/tools.py`
 
@@ -222,16 +226,13 @@ watchlist.csv / portfolio.csv
 src/main.py
       |
       v
-run_agent(ticker, rules, evaluation_type)
+plan_tools_for_rules(buy_rules / sell_rules)
       |
       v
-Claude selects required tools
+tools.py fetches the planned FMP stable data for each ticker, using per-run cache for duplicate endpoint/ticker/params calls
       |
       v
-tools.py fetches FMP stable data, using per-run cache for duplicate endpoint/ticker/params calls
-      |
-      v
-Claude returns signal JSON
+evaluate_signals_from_data_batch(items, rules, evaluation_type)
       |
       v
 write_signals()
@@ -318,6 +319,7 @@ Each evaluated ticker produces:
 - `data_fetched`: JSON-serialized dictionary of metrics used.
 - `entry_price`: included for portfolio evaluations.
 - `run_date`: timestamp for grouping each batch run.
+- `run_elapsed_seconds`: total wall-clock time for the batch run, repeated on each row so History can display run duration.
 
 ### Legacy Signal Display
 
@@ -359,14 +361,15 @@ The system handles errors at several levels:
 
 ## Extension Points
 
-Many metrics can now be added to rules without code changes if they are already returned by an existing bundle tool. For example, once `get_valuation_ratios` exists, rules can reference P/B, PEG, debt-to-equity, current ratio, quick ratio, or margins and Claude can select the same bundle.
+Many metrics can now be added to rules without code changes if `tool_planner.py` can map the wording to an existing bundle tool. For example, once `get_valuation_ratios` exists, rules can reference P/B, PEG, debt-to-equity, current ratio, quick ratio, or margins and the planner can select the same bundle.
 
 To add a metric that is not covered by an existing bundle:
 
 1. Add a new function in `src/agent/tools.py`.
-2. Add a matching schema in `src/agent/tool_schemas.py`.
+2. Add a matching schema in `src/agent/tool_schemas.py` if the provider adapter/tool schema surface should expose it.
 3. Add the function to `_TOOL_DISPATCH` in `src/agent/agent.py`.
-4. Reference the new metric in `BUY_RULES` or `SELL_RULES`.
+4. Add matching keyword logic in `src/agent/tool_planner.py`.
+5. Reference the new metric in `BUY_RULES` or `SELL_RULES`.
 
 To change the investment strategy:
 
@@ -385,8 +388,8 @@ To change the UI:
 - The intended scope is US equities on the FMP free tier.
 - The FMP free tier is constrained by daily request limits; the app tracks daily usage locally and uses per-run caching to avoid duplicate calls.
 - Fundamentals are annual only. Quarterly fundamentals are not requested because the free tier can return plan-gating errors.
-- The LLM interprets user rules, so ambiguous rules can produce inconsistent evaluations.
+- The planner maps user-rule wording to fixed tool sets, so ambiguous or novel wording may require planner updates.
 - The current database stores an audit log of generated signals but does not store raw historical market data.
-- The current agent processes tickers sequentially, one Claude conversation per stock.
+- The current analysis path evaluates tickers in parallel with `MAX_WORKERS = 3`.
 - The dashboard displays the latest run only.
 

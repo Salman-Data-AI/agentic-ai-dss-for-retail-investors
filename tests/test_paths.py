@@ -31,6 +31,7 @@ def test_user_data_dir_uses_appdata_and_creates_app_folder(workspace_tmp_path, m
     assert data_dir.is_dir()
     assert Path(paths.signals_db_path()) == data_dir / "signals.db"
     assert Path(paths.fmp_usage_path()) == data_dir / "fmp_usage.json"
+    assert Path(paths.analysis_summary_path()) == data_dir / "latest_run_summary.json"
     assert Path(paths.user_env_path()) == data_dir / ".env"
 
 

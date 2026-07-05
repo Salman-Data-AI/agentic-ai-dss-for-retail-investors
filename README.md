@@ -71,6 +71,8 @@ OPENAI_API_KEY=your_openai_key_here
 XAI_API_KEY=your_xai_key_here
 GROQ_API_KEY=your_groq_key_here
 DEEPSEEK_API_KEY=your_deepseek_key_here
+GEMINI_API_KEY=your_gemini_key_here
+CEREBRAS_API_KEY=your_cerebras_key_here
 ```
 
 ---
@@ -81,7 +83,7 @@ Open `src/config.py`. This is the **only file you need to edit**.
 
 ### Choose your LLM provider
 
-Set `PROVIDER` to one of `"anthropic"`, `"openai"`, `"grok"`, `"groq"`, or `"deepseek"`, then set `MODEL` to an exact current model ID from that provider's docs:
+Set `PROVIDER` to one of `"anthropic"`, `"openai"`, `"grok"`, `"groq"`, `"deepseek"`, `"gemini"`, or `"cerebras"`, then set `MODEL` to an exact current model ID from that provider's docs:
 
 ```python
 PROVIDER = "anthropic"
