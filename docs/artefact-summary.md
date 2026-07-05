@@ -132,12 +132,17 @@ The Streamlit dashboard provides an interactive interface for running the analys
 
 It displays:
 
+- Run controls and the current provider/model selection.
 - Latest run timestamp.
 - Watchlist BUY evaluations.
 - Portfolio SELL evaluations.
 - Signal cards for each stock.
 - Expandable rationales.
 - Expandable underlying data, including readable JSON for nested bundle outputs.
+- A static Metrics Reference tab that explains available metrics, source tools, rule phrasing, common interpretations, and real AAPL snapshot values.
+- A Settings tab for editing provider choice, model selection, API keys, BUY/SELL rules, watchlist rows, and portfolio rows.
+
+The Metrics Reference tab is informational only. It does not call Financial Modeling Prep, contact an LLM provider, read or write the database, or run an analysis. Its sample values are a real AAPL snapshot fetched once from FMP on 2026-07-05 at 16:05 UTC, so they are static examples rather than automatically refreshed market data.
 
 ## Intended Users
 
@@ -197,6 +202,7 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - It is scoped to US equities and FMP free-tier-friendly usage.
 - FMP free-tier request limits apply; the app tracks local daily usage and uses per-run caching, but each unique endpoint/ticker/parameter request can still consume quota.
 - Annual fundamentals are supported. Quarterly fundamentals are not requested because free-tier endpoints can return plan-gating errors.
+- The Metrics Reference tab is static guidance for rule writing. Its AAPL snapshot values should not be interpreted as current market data after the documented fetch time.
 - It relies on the AI model's interpretation of the user's rules.
 - Ambiguous or contradictory rules can lead to weaker recommendations.
 - It currently processes stocks sequentially.

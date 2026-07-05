@@ -172,6 +172,8 @@ streamlit run dashboard/app.py
 
 Open the URL shown in the terminal (usually `http://localhost:8501`). Click **Run Analysis** to evaluate your stocks. Results appear on screen with expandable explanations and data.
 
+The dashboard also includes a **Metrics Reference** tab. It is static help content: it does not fetch live data, read the database, or run analysis. Use it to see which metrics the agent can fetch, which source tool provides each metric family, and how to phrase metrics in plain-English BUY or SELL rules. The sample values shown there are a real AAPL snapshot fetched once from FMP on 2026-07-05 at 16:05 UTC; they are static examples and are not automatically refreshed.
+
 ### Option B — Terminal only
 
 ```bash
@@ -196,6 +198,29 @@ pytest
 ```
 
 The tests use dummy API keys and monkeypatch all external boundaries, so they do not call Financial Modeling Prep, Anthropic, the real `signals.db`, or the real FMP usage tally file.
+
+---
+
+## CI/CD and Windows builds
+
+GitHub Actions runs three automated paths:
+
+- **Tests** runs the offline pytest suite on pull requests and on pushes to `main`.
+- **Build Check** runs on pull requests targeting `main` and on pushes to `main`. It builds the Windows installer without publishing a release, then uploads a temporary workflow artifact named `AgenticDSS-Setup`.
+- **Release** runs only when a version tag such as `v1.0.0` is pushed. It builds the same installer and publishes it as a GitHub Release asset.
+
+To download a build-check installer, open the completed **Build Check** workflow run in GitHub Actions, go to the run summary, and download the `AgenticDSS-Setup` artifact. GitHub downloads artifacts as a `.zip`; extract it to get `AgenticDSS-Setup.exe`.
+
+To publish a release build, create and push a version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Release downloads appear under the repository's **Releases** page. Build-check artifacts are temporary and intended for manual testing before release.
+
+The CI build starts from a clean checkout with no local `.env` file. The shared installer build also runs a key-leak guard that fails if a bundled `.env` file or secret-looking API key appears in the build output.
 
 ---
 
@@ -232,6 +257,8 @@ The agent fetches data through Financial Modeling Prep stable API endpoints. To 
 - `get_earnings`: past and upcoming earnings dates with EPS/revenue estimates and actuals
 
 FMP free-tier constraints matter: the free plan is limited to 250 requests per day, legacy `/api/v3` paths are not used, and fundamentals request annual data only. Quarterly fundamentals can return HTTP 402 on the free tier; the app treats plan, permission, rate-limit, empty-response, and network failures as tool-level error dictionaries so an analysis run can degrade gracefully instead of crashing.
+
+The dashboard's **Metrics Reference** tab mirrors these tool families in plain English so users can write clearer rules without looking at Python source code. Its AAPL snapshot values were generated with `python scripts/fetch_metrics_snapshot.py AAPL`, which used 18 FMP requests in that run.
 
 ---
 
