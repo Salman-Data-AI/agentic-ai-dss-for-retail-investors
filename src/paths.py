@@ -87,6 +87,10 @@ def fmp_usage_path() -> str:
     return user_data_file("fmp_usage.json")
 
 
+def analysis_summary_path() -> str:
+    return user_data_file("latest_run_summary.json")
+
+
 def user_env_path() -> str:
     return user_data_file(".env")
 

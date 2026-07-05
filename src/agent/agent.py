@@ -1,15 +1,13 @@
-"""
-Core agent loop.
-One call to run_agent() per stock ticker.
-The agent fetches only what it needs, evaluates against rules, returns a signal.
-"""
+"""Signal evaluation from prefetched market data."""
 
 import json
+
 from dotenv import load_dotenv
-from paths import executable_env_path, user_env_path
 
 import config
+from paths import executable_env_path, user_env_path
 from settings import load_settings
+from .llm import create_llm_client
 from .tools import (
     get_analyst_estimates,
     get_analyst_rating,
@@ -28,7 +26,6 @@ from .tools import (
     get_technical_indicator,
     get_valuation_ratios,
 )
-from .llm import create_llm_client
 
 load_dotenv()
 load_dotenv(user_env_path(), override=False)
@@ -80,62 +77,62 @@ _SIGNAL_CONTRACTS = {
     },
 }
 
-_SYSTEM_PROMPT = """You are a rule-based investment decision support system for retail investors.
+_BATCH_SYSTEM_PROMPT = """You are a rule-based investment decision support system for retail investors.
 
-Your job is to evaluate a single stock against the user's stated rules and return a structured signal.
+Your job is to evaluate multiple stocks against the user's stated rules and return structured signals.
 
 INSTRUCTIONS:
-1. Read the user's rules carefully and identify every data point they reference.
-2. Use the available tools to fetch ONLY those data points. Do not fetch data not required by the rules.
-3. Evaluate each fetched value against the relevant rule.
-4. Return your result as a JSON object with exactly these three fields:
+1. Read the user's rules carefully.
+2. Use only the fetched data supplied by the application. Do not request tools or invent missing data.
+3. Evaluate each ticker independently against the relevant rule.
+4. Return your result as a JSON array. The array must contain exactly one object for each input ticker, using exactly these four fields:
 
-{{
-  "signal": "<{allowed_signals}>",
-  "rationale": "<Explain what the key metric value means in market terms — why it is or isn't significant right now — and connect it to the signal. Three to four plain-English sentences. Do not just report pass/fail; explain what the number is telling the investor about the stock's current condition.>",
-  "data_fetched": {{ "<metric_name>": <value>, ... }}
-}}
+[
+  {{
+    "ticker": "<ticker>",
+    "signal": "<{allowed_signals}>",
+    "rationale": "<Explain what the key metric values mean in market terms, why they are or are not significant right now, and connect them to the signal. Three to four plain-English sentences. Do not just report pass/fail; explain what the numbers are telling the investor about the stock's current condition.>",
+    "data_fetched": {{ "<metric_name>": <compact value>, ... }}
+  }}
+]
 
 Rules:
 {signal_rules}
 
 Use only one of these signal values: {allowed_signals}.
+Keep data_fetched compact and include only the metrics needed for the decision.
 
-CRITICAL: Your entire response must be ONLY the JSON object. 
+CRITICAL: Your entire response must be ONLY the JSON array.
 No preamble, no explanation, no markdown, no bullet points, no text before or after the JSON.
-Start your response with {{ and end with }}. Nothing else.
+Start your response with [ and end with ]. Nothing else.
 
 USER RULES:
 {rules}
 """
 
+_BATCH_MAX_TOKENS = 8192
 
-def run_agent(
-    ticker: str,
+
+def evaluate_signals_from_data_batch(
+    items: list[dict],
     rules: str,
     model: str = "claude-sonnet-4-6",
     evaluation_type: str = "GENERAL",
-) -> dict:
-    """
-    Run the agent for a single ticker.
-
-    Args:
-        ticker : stock symbol, e.g. "AAPL"
-        rules           : plain-English rules string from config.py (BUY or SELL)
-        model           : selected provider model string from config.py
-        evaluation_type : BUY_EVAL for watchlist, SELL_EVAL for portfolio
-
-    Returns:
-        dict with keys: ticker, signal, rationale, data_fetched
-    """
+) -> list[dict]:
+    """Evaluate multiple tickers from already-fetched data in one LLM call."""
+    if not items:
+        return []
     contract = _SIGNAL_CONTRACTS.get(evaluation_type)
     if not contract:
-        return _error(
-            ticker,
-            f"Unsupported evaluation_type={evaluation_type!r}. Choose one of: BUY_EVAL, SELL_EVAL, GENERAL.",
-        )
+        return [
+            _error(
+                item["ticker"],
+                f"Unsupported evaluation_type={evaluation_type!r}. Choose one of: BUY_EVAL, SELL_EVAL, GENERAL.",
+            )
+            for item in items
+        ]
     allowed_signals = " | ".join(contract["allowed"])
-    system = _SYSTEM_PROMPT.format(
+    system = _BATCH_SYSTEM_PROMPT.format(
         rules=rules,
         allowed_signals=allowed_signals,
         signal_rules=contract["rules"],
@@ -146,57 +143,100 @@ def run_agent(
         model = settings.get("model") or model
     provider_settings = getattr(config, "PROVIDER_SETTINGS", {}).get(provider)
     if not provider_settings:
-        return _error(
-            ticker,
-            f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek.",
-        )
+        return [
+            _error(
+                item["ticker"],
+                f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek, gemini, cerebras.",
+            )
+            for item in items
+        ]
+
+    payload = [
+        {
+            "ticker": item["ticker"],
+            "fetched_data": item["fetched_data"],
+        }
+        for item in items
+    ]
+    user_content = (
+        "Evaluate these stocks independently.\n\n"
+        f"FETCHED DATA JSON:\n{json.dumps(payload, sort_keys=True)}"
+    )
 
     try:
         client = create_llm_client(
             provider=provider,
             model=model,
             system=system,
-            user_content=f"Evaluate stock: {ticker}",
+            user_content=user_content,
             provider_settings=provider_settings,
+            tool_schemas=[],
+            max_tokens=_BATCH_MAX_TOKENS,
         )
     except RuntimeError as exc:
-        return _error(ticker, str(exc))
+        return [_error(item["ticker"], str(exc)) for item in items]
 
-    while True:
-        response = client.next_step()
+    response = client.next_step()
+    if response.final_text is not None:
+        return _parse_signal_batch_response(
+            items=items,
+            text=response.final_text,
+            contract=contract,
+            evaluation_type=evaluation_type,
+            allowed_signals=allowed_signals,
+        )
+    if response.tool_calls is not None:
+        return [
+            _error(item["ticker"], "Agent requested tools even though data was already fetched")
+            for item in items
+        ]
+    return [_error(item["ticker"], response.error or "Agent returned no response") for item in items]
 
-        if response.tool_calls is not None:
-            tool_results = []
-            for call in response.tool_calls:
-                fn = _TOOL_DISPATCH.get(call.name)
-                result = fn(**call.arguments) if fn else {"error": f"Unknown tool: {call.name}"}
-                tool_results.append({"id": call.id, "result": result})
-            client.append_tool_results(tool_results)
+
+def _parse_signal_batch_response(
+    *,
+    items: list[dict],
+    text: str,
+    contract: dict,
+    evaluation_type: str,
+    allowed_signals: str,
+) -> list[dict]:
+    text = text.strip()
+    start = text.find("[")
+    end = text.rfind("]") + 1
+    if start == -1 or end <= start:
+        return [_error(item["ticker"], "Agent returned no JSON array") for item in items]
+    try:
+        parsed = json.loads(text[start:end])
+    except json.JSONDecodeError:
+        return [_error(item["ticker"], f"Could not parse agent response: {text[:300]}") for item in items]
+    if not isinstance(parsed, list):
+        return [_error(item["ticker"], "Agent returned JSON but not an array") for item in items]
+
+    by_ticker = {
+        str(row.get("ticker", "")).upper().strip(): row
+        for row in parsed
+        if isinstance(row, dict)
+    }
+    results = []
+    for item in items:
+        ticker = item["ticker"]
+        row = by_ticker.get(ticker.upper().strip())
+        if not row:
+            results.append(_error(ticker, "Agent omitted this ticker from the batch response"))
             continue
-
-        if response.final_text is not None:
-            text = response.final_text.strip()
-            # Find the JSON object anywhere in the response
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start != -1 and end > start:
-                try:
-                    result = json.loads(text[start:end])
-                    if result.get("signal") not in contract["allowed"]:
-                        return _error(
-                            ticker,
-                            (
-                                f"Agent returned invalid signal {result.get('signal')!r} "
-                                f"for {evaluation_type}. Allowed signals: {allowed_signals}."
-                            ),
-                        )
-                    result["ticker"] = ticker
-                    return result
-                except json.JSONDecodeError:
-                    return _error(ticker, f"Could not parse agent response: {text[:300]}")
-            return _error(ticker, "Agent returned no text content")
-
-        return _error(ticker, response.error or "Agent returned no response")
+        if row.get("signal") not in contract["allowed"]:
+            results.append(_error(
+                ticker,
+                (
+                    f"Agent returned invalid signal {row.get('signal')!r} "
+                    f"for {evaluation_type}. Allowed signals: {allowed_signals}."
+                ),
+            ))
+            continue
+        row["ticker"] = ticker
+        results.append(row)
+    return results
 
 
 def _error(ticker: str, msg: str) -> dict:
