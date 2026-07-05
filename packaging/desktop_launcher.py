@@ -20,7 +20,7 @@ def main() -> None:
 
     dashboard = src_dir / "dashboard" / "app.py"
     os.environ.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "false")
-    os.environ.setdefault("STREAMLIT_SERVER_HEADLESS", "false")
+    os.environ.setdefault("STREAMLIT_SERVER_HEADLESS", "true")
     os.environ.setdefault("STREAMLIT_GLOBAL_DEVELOPMENT_MODE", "false")
 
     from streamlit.web import cli as streamlit_cli
@@ -29,7 +29,7 @@ def main() -> None:
         "streamlit",
         "run",
         str(dashboard),
-        "--server.headless=false",
+        "--server.headless=true",
         "--browser.gatherUsageStats=false",
     ]
     streamlit_cli.main()
