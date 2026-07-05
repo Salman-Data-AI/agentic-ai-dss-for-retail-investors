@@ -56,8 +56,8 @@ Responsibilities:
 
 The pipeline produces two categories of output:
 
-- `BUY_EVAL`: generated from watchlist tickers and `BUY_RULES`.
-- `SELL_EVAL`: generated from portfolio holdings and `SELL_RULES`.
+- `BUY_EVAL`: generated from watchlist tickers and `BUY_RULES`; valid successful signals are `BUY` and `SKIP`.
+- `SELL_EVAL`: generated from portfolio holdings and `SELL_RULES`; valid successful signals are `SELL` and `HOLD`.
 
 For SELL evaluations, `main.py` injects holding-specific context into the rules, including entry price, quantity, and entry date. This lets the agent evaluate take-profit and stop-loss rules that depend on the investor's purchase price.
 
@@ -75,7 +75,7 @@ The rules are intentionally written as natural language so the user can change s
 
 ### Agent Loop: `src/agent/agent.py`
 
-`run_agent(ticker, rules, model)` is the core agent function.
+`run_agent(ticker, rules, model, evaluation_type)` is the core agent function.
 
 The function:
 
@@ -91,7 +91,7 @@ The agent is instructed to return exactly this shape:
 
 ```json
 {
-  "signal": "BUY | SELL | HOLD",
+  "signal": "BUY | SKIP for BUY_EVAL, or SELL | HOLD for SELL_EVAL",
   "rationale": "Plain-English explanation",
   "data_fetched": {
     "metric_name": "metric value"
@@ -99,7 +99,7 @@ The agent is instructed to return exactly this shape:
 }
 ```
 
-If parsing fails or the agent returns an unexpected stop reason, `_error()` returns a structured `ERROR` signal. This keeps downstream storage and dashboard rendering consistent.
+The `evaluation_type` argument selects the allowed signal contract. `BUY_EVAL` prompts the model to choose only `BUY` or `SKIP`; `SELL_EVAL` prompts it to choose only `SELL` or `HOLD`. After parsing the JSON, `run_agent()` validates the returned `signal` against that contract. If parsing fails, the model returns a signal outside the active contract, or the agent receives an unexpected stop reason, `_error()` returns a structured `ERROR` signal. This keeps downstream storage and dashboard rendering consistent.
 
 ### Tool Schemas: `src/agent/tool_schemas.py`
 
@@ -190,6 +190,7 @@ Responsibilities:
 - Execute `src/main.py` as a subprocess.
 - Read the latest signals from SQLite.
 - Split results into watchlist BUY evaluations and portfolio SELL evaluations.
+- Normalize legacy stored signal labels for display.
 - Render each result as a card with signal, rationale, and underlying data.
 
 The dashboard uses progressive disclosure:
@@ -212,7 +213,7 @@ watchlist.csv / portfolio.csv
 src/main.py
       |
       v
-run_agent(ticker, rules)
+run_agent(ticker, rules, evaluation_type)
       |
       v
 Claude selects required tools
@@ -269,6 +270,11 @@ GOOGL
 
 Each ticker is evaluated against `BUY_RULES`.
 
+Valid successful watchlist signals are:
+
+- `BUY`: the ticker meets the user's entry criteria now.
+- `SKIP`: the ticker does not meet the user's entry criteria now.
+
 ### Portfolio
 
 Path:
@@ -287,17 +293,30 @@ META,5,520.00,2024-10-03
 
 Each holding is evaluated against `SELL_RULES`. The entry price, quantity, and date are included in the prompt context.
 
+Valid successful portfolio signals are:
+
+- `SELL`: the holding meets the user's exit criteria now.
+- `HOLD`: the holding does not meet the user's exit criteria now.
+
 ## Outputs
 
 Each evaluated ticker produces:
 
 - `ticker`: stock symbol.
-- `signal`: `BUY`, `SELL`, `HOLD`, or `ERROR`.
+- `signal`: `BUY` or `SKIP` for watchlist evaluations; `SELL` or `HOLD` for portfolio evaluations; `ERROR` for failures.
 - `signal_type`: `BUY_EVAL` or `SELL_EVAL`.
 - `rationale`: plain-English explanation.
 - `data_fetched`: JSON-serialized dictionary of metrics used.
 - `entry_price`: included for portfolio evaluations.
 - `run_date`: timestamp for grouping each batch run.
+
+### Legacy Signal Display
+
+Older database rows may contain labels that are no longer valid for a given evaluation type, such as `SELL` on a `BUY_EVAL` watchlist row. The dashboard does not rewrite those audit rows. Instead, `dashboard.logic.normalize_signal_for_display()` maps legacy labels into the current display vocabulary:
+
+- `BUY_EVAL` rows display `SELL` or `HOLD` as `SKIP`.
+- `SELL_EVAL` rows display `BUY` or `SKIP` as `HOLD`.
+- Unknown labels display as `ERROR`.
 
 ## Dependencies
 

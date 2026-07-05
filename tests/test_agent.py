@@ -64,6 +64,55 @@ def test_run_agent_dispatches_tool_and_returns_final_json(monkeypatch):
     assert create_client.call_args.kwargs["provider"] == "anthropic"
 
 
+def test_run_agent_uses_watchlist_buy_skip_contract(monkeypatch):
+    fake_client = FakeNormalizedClient([
+        LLMResponse(final_text='{"signal":"SKIP","rationale":"ok","data_fetched":{}}'),
+    ])
+    create_client = Mock(return_value=fake_client)
+
+    monkeypatch.setattr(agent_module, "create_llm_client", create_client)
+    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
+    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
+        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
+    })
+
+    result = agent_module.run_agent(
+        "AAPL",
+        "use price",
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+    )
+
+    system = create_client.call_args.kwargs["system"]
+    assert '"signal": "<BUY | SKIP>"' in system
+    assert "SKIP : the stock does not meet the user's entry criteria now; skip for now" in system
+    assert "Use only one of these signal values: BUY | SKIP." in system
+    assert result["signal"] == "SKIP"
+
+
+def test_run_agent_rejects_signal_outside_evaluation_contract(monkeypatch):
+    fake_client = FakeNormalizedClient([
+        LLMResponse(final_text='{"signal":"SELL","rationale":"ok","data_fetched":{}}'),
+    ])
+
+    monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
+    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
+    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
+        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
+    })
+
+    result = agent_module.run_agent(
+        "AAPL",
+        "use price",
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+    )
+
+    assert result["ticker"] == "AAPL"
+    assert result["signal"] == "ERROR"
+    assert "invalid signal 'SELL' for BUY_EVAL" in result["rationale"]
+
+
 def test_run_agent_openai_compatible_tool_flow_and_malformed_output(monkeypatch):
     quote_tool = Mock(return_value={"ticker": "AAPL", "price": 195.0})
     openai_client = OpenAICompatibleAdapter(

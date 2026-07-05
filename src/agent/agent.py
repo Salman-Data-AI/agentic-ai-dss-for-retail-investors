@@ -55,6 +55,31 @@ _TOOL_DISPATCH = {
     "get_earnings": get_earnings,
 }
 
+_SIGNAL_CONTRACTS = {
+    "BUY_EVAL": {
+        "allowed": ("BUY", "SKIP"),
+        "rules": (
+            "- BUY  : the stock meets the user's entry criteria now\n"
+            "- SKIP : the stock does not meet the user's entry criteria now; skip for now"
+        ),
+    },
+    "SELL_EVAL": {
+        "allowed": ("SELL", "HOLD"),
+        "rules": (
+            "- SELL : the stock meets the user's exit criteria now\n"
+            "- HOLD : the stock does not meet the user's exit criteria now; continue holding"
+        ),
+    },
+    "GENERAL": {
+        "allowed": ("BUY", "SELL", "HOLD"),
+        "rules": (
+            "- BUY  : the stock meets the entry criteria\n"
+            "- SELL : the stock meets the exit criteria\n"
+            "- HOLD : the stock does not clearly meet entry or exit criteria"
+        ),
+    },
+}
+
 _SYSTEM_PROMPT = """You are a rule-based investment decision support system for retail investors.
 
 Your job is to evaluate a single stock against the user's stated rules and return a structured signal.
@@ -66,15 +91,15 @@ INSTRUCTIONS:
 4. Return your result as a JSON object with exactly these three fields:
 
 {{
-  "signal": "<BUY | SELL | HOLD>",
+  "signal": "<{allowed_signals}>",
   "rationale": "<Explain what the key metric value means in market terms — why it is or isn't significant right now — and connect it to the signal. Three to four plain-English sentences. Do not just report pass/fail; explain what the number is telling the investor about the stock's current condition.>",
   "data_fetched": {{ "<metric_name>": <value>, ... }}
 }}
 
 Rules:
-- BUY   : the stock meets the entry criteria
-- SELL  : the stock meets the exit criteria
-- HOLD  : the stock does not clearly meet entry or exit criteria
+{signal_rules}
+
+Use only one of these signal values: {allowed_signals}.
 
 CRITICAL: Your entire response must be ONLY the JSON object. 
 No preamble, no explanation, no markdown, no bullet points, no text before or after the JSON.
@@ -85,19 +110,36 @@ USER RULES:
 """
 
 
-def run_agent(ticker: str, rules: str, model: str = "claude-sonnet-4-6") -> dict:
+def run_agent(
+    ticker: str,
+    rules: str,
+    model: str = "claude-sonnet-4-6",
+    evaluation_type: str = "GENERAL",
+) -> dict:
     """
     Run the agent for a single ticker.
 
     Args:
         ticker : stock symbol, e.g. "AAPL"
-        rules  : plain-English rules string from config.py (BUY or SELL)
-        model  : selected provider model string from config.py
+        rules           : plain-English rules string from config.py (BUY or SELL)
+        model           : selected provider model string from config.py
+        evaluation_type : BUY_EVAL for watchlist, SELL_EVAL for portfolio
 
     Returns:
         dict with keys: ticker, signal, rationale, data_fetched
     """
-    system = _SYSTEM_PROMPT.format(rules=rules)
+    contract = _SIGNAL_CONTRACTS.get(evaluation_type)
+    if not contract:
+        return _error(
+            ticker,
+            f"Unsupported evaluation_type={evaluation_type!r}. Choose one of: BUY_EVAL, SELL_EVAL, GENERAL.",
+        )
+    allowed_signals = " | ".join(contract["allowed"])
+    system = _SYSTEM_PROMPT.format(
+        rules=rules,
+        allowed_signals=allowed_signals,
+        signal_rules=contract["rules"],
+    )
     settings = load_settings()
     provider = settings.get("provider") or getattr(config, "PROVIDER", "anthropic")
     if model == "claude-sonnet-4-6":
@@ -140,6 +182,14 @@ def run_agent(ticker: str, rules: str, model: str = "claude-sonnet-4-6") -> dict
             if start != -1 and end > start:
                 try:
                     result = json.loads(text[start:end])
+                    if result.get("signal") not in contract["allowed"]:
+                        return _error(
+                            ticker,
+                            (
+                                f"Agent returned invalid signal {result.get('signal')!r} "
+                                f"for {evaluation_type}. Allowed signals: {allowed_signals}."
+                            ),
+                        )
                     result["ticker"] = ticker
                     return result
                 except json.JSONDecodeError:

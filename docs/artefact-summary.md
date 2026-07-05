@@ -2,7 +2,7 @@
 
 ## What It Is
 
-Agentic DSS for Retail Investors is an AI-assisted decision support artefact for individual investors. It helps users evaluate stocks against their own investment rules and produces plain-language BUY, SELL, or HOLD signals.
+Agentic DSS for Retail Investors is an AI-assisted decision support artefact for individual investors. It helps users evaluate stocks against their own investment rules and produces plain-language BUY, SKIP, SELL, or HOLD signals.
 
 The artefact is not a trading bot and does not execute trades. It is a rule-based advisory tool that helps make investment decisions more consistent, explainable, and auditable.
 
@@ -27,7 +27,7 @@ The system evaluates two groups of stocks:
 
 For each stock, it returns:
 
-- A signal: `BUY`, `SELL`, `HOLD`, or `ERROR`.
+- A signal: `BUY` or `SKIP` for watchlist stocks; `SELL` or `HOLD` for portfolio stocks; or `ERROR` if evaluation fails.
 - A rationale explaining why that signal was generated.
 - The specific data points used during evaluation.
 
@@ -85,13 +85,13 @@ The system then:
 
 The watchlist file contains stocks the user may want to buy. Each ticker is evaluated against `BUY_RULES`.
 
-The output helps the user identify which watchlist stocks currently match their entry criteria.
+The output helps the user identify which watchlist stocks currently match their entry criteria. Watchlist evaluations return `BUY` when the stock meets the user's entry criteria now and `SKIP` when it does not meet those criteria now. `SKIP` means "skip for now"; it is not a permanent rejection of the stock.
 
 ### Rule-Based SELL Evaluation
 
 The portfolio file contains stocks the user already owns, including quantity, entry price, and entry date. Each holding is evaluated against `SELL_RULES`.
 
-The output helps the user identify whether an existing holding may meet exit, profit-taking, stop-loss, or risk-management criteria.
+The output helps the user identify whether an existing holding may meet exit, profit-taking, stop-loss, or risk-management criteria. Portfolio evaluations return `SELL` when the holding meets the user's exit criteria now and `HOLD` when it does not.
 
 ### AI-Guided Data Selection
 
@@ -152,7 +152,7 @@ The artefact is also suitable for research or demonstration contexts where expla
 3. Add candidate stocks to `src/data/watchlist.csv`.
 4. Add current holdings to `src/data/portfolio.csv`.
 5. Run the dashboard with Streamlit or execute the terminal pipeline.
-6. Review BUY, SELL, and HOLD signals.
+6. Review BUY, SKIP, SELL, and HOLD signals.
 7. Expand each result to inspect the rationale and data used.
 
 ## Key Design Principles
@@ -179,8 +179,8 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 
 ## Current Capabilities
 
-- Evaluate watchlist tickers for potential BUY signals.
-- Evaluate portfolio holdings for potential SELL signals.
+- Evaluate watchlist tickers for `BUY` or `SKIP` signals.
+- Evaluate portfolio holdings for `SELL` or `HOLD` signals.
 - Interpret plain-English investment rules.
 - Fetch quote data, technical indicators, fundamentals, profile data, performance data, analyst data, and earnings data.
 - Fetch broader valuation, financial-health, annual statement, performance, profile, analyst, and earnings data through FMP bundle tools.
