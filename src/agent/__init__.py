@@ -2,13 +2,6 @@
 
 from __future__ import annotations
 
+from .agent import evaluate_signals_from_data_batch
 
-def __getattr__(name: str):
-    if name == "run_agent":
-        from .agent import run_agent
-
-        return run_agent
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-__all__ = ["run_agent"]
+__all__ = ["evaluate_signals_from_data_batch"]

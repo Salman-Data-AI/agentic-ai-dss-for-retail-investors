@@ -34,163 +34,67 @@ class FakeNormalizedClient:
         self.appended_results.append(results)
 
 
-def test_run_agent_dispatches_tool_and_returns_final_json(monkeypatch):
-    quote_tool = Mock(return_value={"ticker": "AAPL", "price": 195.0})
-    fake_client = FakeNormalizedClient([
-        LLMResponse(tool_calls=[ToolCall(id="tool-1", name="get_quote", arguments={"ticker": "AAPL"})]),
-        LLMResponse(final_text='{"signal":"BUY","rationale":"ok","data_fetched":{"price":195.0}}'),
-    ])
-    create_client = Mock(return_value=fake_client)
-
-    monkeypatch.setitem(agent_module._TOOL_DISPATCH, "get_quote", quote_tool)
-    monkeypatch.setattr(agent_module, "create_llm_client", create_client)
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
+def _patch_provider(monkeypatch, provider="anthropic"):
+    monkeypatch.setattr(agent_module.config, "PROVIDER", provider)
     monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
+        provider: {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
     })
 
-    result = agent_module.run_agent("AAPL", "use price", model="test-model")
 
-    quote_tool.assert_called_once_with(ticker="AAPL")
-    assert result == {
-        "ticker": "AAPL",
-        "signal": "BUY",
-        "rationale": "ok",
-        "data_fetched": {"price": 195.0},
-    }
-    assert fake_client.appended_results == [[
-        {"id": "tool-1", "result": {"ticker": "AAPL", "price": 195.0}}
-    ]]
-    assert create_client.call_args.kwargs["provider"] == "anthropic"
-
-
-def test_run_agent_uses_watchlist_buy_skip_contract(monkeypatch):
+def test_evaluate_signals_from_data_batch_uses_one_no_tool_client(monkeypatch):
     fake_client = FakeNormalizedClient([
-        LLMResponse(final_text='{"signal":"SKIP","rationale":"ok","data_fetched":{}}'),
+        LLMResponse(final_text=(
+            '['
+            '{"ticker":"AAPL","signal":"BUY","rationale":"ok","data_fetched":{"price":200}},'
+            '{"ticker":"MSFT","signal":"SKIP","rationale":"steady","data_fetched":{"price":300}}'
+            ']'
+        )),
     ])
     create_client = Mock(return_value=fake_client)
 
     monkeypatch.setattr(agent_module, "create_llm_client", create_client)
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
-    })
+    _patch_provider(monkeypatch)
 
-    result = agent_module.run_agent(
-        "AAPL",
+    result = agent_module.evaluate_signals_from_data_batch(
+        [
+            {"ticker": "AAPL", "fetched_data": {"get_quote": {"price": 200}}},
+            {"ticker": "MSFT", "fetched_data": {"get_quote": {"price": 300}}},
+        ],
         "use price",
         model="test-model",
         evaluation_type="BUY_EVAL",
     )
 
-    system = create_client.call_args.kwargs["system"]
-    assert '"signal": "<BUY | SKIP>"' in system
-    assert "SKIP : the stock does not meet the user's entry criteria now; skip for now" in system
-    assert "Use only one of these signal values: BUY | SKIP." in system
-    assert result["signal"] == "SKIP"
+    assert [row["ticker"] for row in result] == ["AAPL", "MSFT"]
+    assert [row["signal"] for row in result] == ["BUY", "SKIP"]
+    assert create_client.call_count == 1
+    assert create_client.call_args.kwargs["tool_schemas"] == []
+    assert create_client.call_args.kwargs["max_tokens"] == 8192
+    assert "JSON array" in create_client.call_args.kwargs["system"]
+    assert "Three to four plain-English sentences" in create_client.call_args.kwargs["system"]
 
 
-def test_run_agent_rejects_signal_outside_evaluation_contract(monkeypatch):
+def test_evaluate_signals_from_data_batch_handles_bad_rows(monkeypatch):
     fake_client = FakeNormalizedClient([
-        LLMResponse(final_text='{"signal":"SELL","rationale":"ok","data_fetched":{}}'),
+        LLMResponse(final_text='[{"ticker":"AAPL","signal":"SELL","rationale":"bad","data_fetched":{}}]'),
     ])
 
     monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
-    })
+    _patch_provider(monkeypatch)
 
-    result = agent_module.run_agent(
-        "AAPL",
-        "use price",
-        model="test-model",
+    result = agent_module.evaluate_signals_from_data_batch(
+        [
+            {"ticker": "AAPL", "fetched_data": {}},
+            {"ticker": "MSFT", "fetched_data": {}},
+        ],
+        "rules",
         evaluation_type="BUY_EVAL",
     )
 
-    assert result["ticker"] == "AAPL"
-    assert result["signal"] == "ERROR"
-    assert "invalid signal 'SELL' for BUY_EVAL" in result["rationale"]
-
-
-def test_run_agent_openai_compatible_tool_flow_and_malformed_output(monkeypatch):
-    quote_tool = Mock(return_value={"ticker": "AAPL", "price": 195.0})
-    openai_client = OpenAICompatibleAdapter(
-        model="test-model",
-        system="system",
-        user_content="Evaluate stock: AAPL",
-        api_key="test-key",
-        base_url="https://example.test/v1",
-        client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=[
-            SimpleNamespace(choices=[SimpleNamespace(
-                finish_reason="tool_calls",
-                message=SimpleNamespace(
-                    content=None,
-                    tool_calls=[openai_tool_call("get_quote")],
-                ),
-            )]),
-            SimpleNamespace(choices=[SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(
-                    content='{"signal":"BUY","rationale":"ok","data_fetched":{"price":195.0}}',
-                    tool_calls=None,
-                ),
-            )]),
-        ])))),
-    )
-    malformed_client = FakeNormalizedClient([LLMResponse(final_text="{bad json}")])
-
-    monkeypatch.setitem(agent_module._TOOL_DISPATCH, "get_quote", quote_tool)
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "openai")
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "openai": {"api_key_env": "OPENAI_API_KEY", "base_url": "https://api.openai.com/v1"}
-    })
-    monkeypatch.setattr(agent_module, "create_llm_client", Mock(side_effect=[openai_client, malformed_client]))
-
-    result = agent_module.run_agent("AAPL", "use price", model="test-model")
-    bad_json = agent_module.run_agent("MSFT", "rules", model="test-model")
-
-    quote_tool.assert_called_once_with(ticker="AAPL")
-    assert result["signal"] == "BUY"
-    assert result["data_fetched"] == {"price": 195.0}
-    assert bad_json["signal"] == "ERROR"
-    assert "Could not parse agent response" in bad_json["rationale"]
-
-
-def test_run_agent_returns_error_for_unparseable_final_output(monkeypatch):
-    fake_client = FakeNormalizedClient([LLMResponse(final_text="not json")])
-    monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
-    })
-
-    result = agent_module.run_agent("MSFT", "rules")
-
-    assert result["ticker"] == "MSFT"
-    assert result["signal"] == "ERROR"
-    assert result["data_fetched"] == {}
-    assert "Agent returned no text content" in result["rationale"]
-
-
-def test_run_agent_returns_error_for_client_error_and_unknown_provider(monkeypatch):
-    fake_client = FakeNormalizedClient([LLMResponse(error="Unexpected stop reason: max_tokens")])
-    monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "anthropic")
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
-    })
-
-    unexpected = agent_module.run_agent("MSFT", "rules")
-
-    assert unexpected == agent_module._error("MSFT", "Unexpected stop reason: max_tokens")
-
-    monkeypatch.setattr(agent_module.config, "PROVIDER", "nope")
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {})
-    unsupported = agent_module.run_agent("MSFT", "rules")
-
-    assert unsupported["signal"] == "ERROR"
-    assert "Unsupported PROVIDER" in unsupported["rationale"]
+    assert result[0]["signal"] == "ERROR"
+    assert "invalid signal 'SELL'" in result[0]["rationale"]
+    assert result[1]["signal"] == "ERROR"
+    assert "omitted this ticker" in result[1]["rationale"]
 
 
 def test_anthropic_adapter_preserves_tool_use_message_flow():
@@ -280,6 +184,32 @@ def test_openai_adapter_uses_max_completion_tokens_for_openai_models():
     assert response.final_text == '{"signal":"HOLD","rationale":"ok","data_fetched":{}}'
     assert fake_create.call_args.kwargs["max_completion_tokens"] == 1024
     assert "max_tokens" not in fake_create.call_args.kwargs
+
+
+def test_openai_adapter_omits_tools_when_no_tool_schemas_are_provided():
+    fake_create = Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason="stop",
+        message=SimpleNamespace(
+            content='{"signal":"HOLD","rationale":"ok","data_fetched":{}}',
+            tool_calls=None,
+        ),
+    )]))
+    adapter = OpenAICompatibleAdapter(
+        model="test-model",
+        system="system",
+        user_content="Evaluate stock: AAPL",
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        provider="groq",
+        client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))),
+        tool_schemas=[],
+    )
+
+    response = adapter.next_step()
+
+    assert response.final_text == '{"signal":"HOLD","rationale":"ok","data_fetched":{}}'
+    assert "tools" not in fake_create.call_args.kwargs
+    assert "tool_choice" not in fake_create.call_args.kwargs
 
 
 def test_error_contract():

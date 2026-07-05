@@ -28,7 +28,7 @@ class LLMResponse:
 
 
 class LLMClient(Protocol):
-    """Uniform interface consumed by run_agent."""
+    """Uniform interface consumed by signal evaluation."""
 
     def next_step(self) -> LLMResponse:
         """Ask the model for the next tool calls or final response text."""
@@ -49,24 +49,27 @@ class AnthropicAdapter:
         api_key: str,
         client=None,
         max_tokens: int = 1024,
+        tool_schemas: list[dict] | None = None,
     ) -> None:
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set for PROVIDER='anthropic'")
         self.model = model
         self.system = system
         self.max_tokens = max_tokens
-        self.tools = TOOL_SCHEMAS
+        self.tools = TOOL_SCHEMAS if tool_schemas is None else tool_schemas
         self.messages = [{"role": "user", "content": user_content}]
         self.client = client or Anthropic(api_key=api_key)
 
     def next_step(self) -> LLMResponse:
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=self.system,
-            tools=self.tools,
-            messages=self.messages,
-        )
+        kwargs = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "system": self.system,
+            "messages": self.messages,
+        }
+        if self.tools:
+            kwargs["tools"] = self.tools
+        response = self.client.messages.create(**kwargs)
 
         if response.stop_reason == "tool_use":
             self.messages.append({"role": "assistant", "content": response.content})
@@ -110,6 +113,7 @@ class OpenAICompatibleAdapter:
         provider: str = "openai-compatible",
         client=None,
         max_tokens: int = 1024,
+        tool_schemas: list[dict] | None = None,
     ) -> None:
         if not api_key:
             raise RuntimeError("API key is not set for the selected OpenAI-compatible provider")
@@ -119,7 +123,7 @@ class OpenAICompatibleAdapter:
         self.model = model
         self.provider = provider
         self.max_tokens = max_tokens
-        self.tools = self._render_tools(TOOL_SCHEMAS)
+        self.tools = self._render_tools(TOOL_SCHEMAS if tool_schemas is None else tool_schemas)
         self.messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
@@ -132,13 +136,15 @@ class OpenAICompatibleAdapter:
             if self.provider == "openai"
             else {"max_tokens": self.max_tokens}
         )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,
-            tools=self.tools,
-            tool_choice="auto",
+        kwargs = {
+            "model": self.model,
+            "messages": self.messages,
             **token_limit,
-        )
+        }
+        if self.tools:
+            kwargs["tools"] = self.tools
+            kwargs["tool_choice"] = "auto"
+        response = self.client.chat.completions.create(**kwargs)
         choice = response.choices[0]
         message = choice.message
         tool_calls = getattr(message, "tool_calls", None) or []
@@ -175,7 +181,7 @@ class OpenAICompatibleAdapter:
             from openai import OpenAI
         except ImportError as exc:
             raise RuntimeError(
-                "The openai package is required for PROVIDER values openai, grok, groq, and deepseek. "
+                "The openai package is required for PROVIDER values openai, grok, groq, deepseek, gemini, and cerebras. "
                 "Install dependencies in the Python environment running the app with: "
                 f"{sys.executable} -m pip install -r requirements.txt"
             ) from exc
@@ -235,6 +241,8 @@ def create_llm_client(
     system: str,
     user_content: str,
     provider_settings: dict,
+    tool_schemas: list[dict] | None = None,
+    max_tokens: int | None = None,
 ) -> LLMClient:
     """Build the selected provider adapter from config-provided settings."""
     normalized = provider.lower().strip()
@@ -244,23 +252,35 @@ def create_llm_client(
         raise RuntimeError(f"{api_key_env} is not set for PROVIDER={normalized!r}")
 
     if normalized == "anthropic":
+        kwargs = {
+            "model": model,
+            "system": system,
+            "user_content": user_content,
+            "api_key": api_key,
+        }
+        if tool_schemas is not None:
+            kwargs["tool_schemas"] = tool_schemas
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
         return AnthropicAdapter(
-            model=model,
-            system=system,
-            user_content=user_content,
-            api_key=api_key,
+            **kwargs,
         )
 
-    if normalized in {"openai", "grok", "groq", "deepseek"}:
-        return OpenAICompatibleAdapter(
-            model=model,
-            system=system,
-            user_content=user_content,
-            api_key=api_key,
-            base_url=provider_settings["base_url"],
-            provider=normalized,
-        )
+    if normalized in {"openai", "grok", "groq", "deepseek", "gemini", "cerebras"}:
+        kwargs = {
+            "model": model,
+            "system": system,
+            "user_content": user_content,
+            "api_key": api_key,
+            "base_url": provider_settings["base_url"],
+            "provider": normalized,
+        }
+        if tool_schemas is not None:
+            kwargs["tool_schemas"] = tool_schemas
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        return OpenAICompatibleAdapter(**kwargs)
 
     raise RuntimeError(
-        f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek."
+        f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek, gemini, cerebras."
     )

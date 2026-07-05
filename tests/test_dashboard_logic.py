@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 
-from dashboard.logic import build_history_rows, split_signal_groups
+from dashboard.logic import build_history_rows, escape_markdown_math, split_signal_groups
 
 
 def test_split_signal_groups():
@@ -53,6 +53,7 @@ def test_build_history_rows():
             "data_fetched": {"name": "Apple Inc."},
             "provider": "anthropic",
             "model": "claude-test",
+            "run_elapsed_seconds": 12.345,
         },
         {
             "run_date": "2026-07-02",
@@ -63,12 +64,14 @@ def test_build_history_rows():
             "data_fetched": {},
             "provider": None,
             "model": None,
+            "run_elapsed_seconds": None,
         },
     ])
 
     assert rows == [
         {
             "Run date": "2026-07-02",
+            "Duration": "12.3s",
             "Ticker": "AAPL",
             "Company": "Apple Inc.",
             "Type": "BUY eval",
@@ -79,6 +82,7 @@ def test_build_history_rows():
         },
         {
             "Run date": "2026-07-02",
+            "Duration": "",
             "Ticker": "JPM",
             "Company": "JPM",
             "Type": "SELL eval",
@@ -106,6 +110,12 @@ def test_build_history_rows_normalizes_legacy_watchlist_sell():
 
     assert rows[0]["Signal"] == "SKIP"
     assert "Legacy stored signal 'SELL' is shown as 'SKIP'" in rows[0]["Rationale"]
+
+
+def test_escape_markdown_math_preserves_dollar_prices_as_text():
+    text = "Price $359.91 is far above the $251.72 cutoff."
+
+    assert escape_markdown_math(text) == "Price \\$359.91 is far above the \\$251.72 cutoff."
 
 
 def test_streamlit_apptest_import_path_is_available():

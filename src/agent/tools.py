@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import date
 
 import requests
@@ -32,6 +33,7 @@ _FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 _USAGE_PATH = fmp_usage_path()
 _FMP_RUN_REQUEST_COUNT = 0
 _FMP_RUN_CACHE = {}
+_FMP_LOCK = threading.Lock()
 _HTTP = requests.Session()
 _HTTP.trust_env = False
 
@@ -60,11 +62,12 @@ def _write_usage(data: dict) -> None:
 def _increment_fmp_request_count() -> None:
     global _FMP_RUN_REQUEST_COUNT
 
-    _FMP_RUN_REQUEST_COUNT += 1
-    today = _today_key()
-    usage = _read_usage()
-    usage[today] = int(usage.get(today, 0)) + 1
-    _write_usage(usage)
+    with _FMP_LOCK:
+        _FMP_RUN_REQUEST_COUNT += 1
+        today = _today_key()
+        usage = _read_usage()
+        usage[today] = int(usage.get(today, 0)) + 1
+        _write_usage(usage)
 
 
 def get_fmp_request_count() -> int:
@@ -96,8 +99,10 @@ def _fmp_get(path: str, params: dict) -> list | dict:
         raise RuntimeError("FMP_API_KEY is not set")
 
     key = _cache_key(path, params)
-    if key in _FMP_RUN_CACHE:
-        return _FMP_RUN_CACHE[key]
+    with _FMP_LOCK:
+        cached = _FMP_RUN_CACHE.get(key)
+    if cached is not None:
+        return cached
 
     query = {**params, "apikey": api_key}
     _increment_fmp_request_count()
@@ -124,7 +129,8 @@ def _fmp_get(path: str, params: dict) -> list | dict:
         raise RuntimeError(f"FMP error: {payload['Error Message']}")
     if payload in ({}, []):
         raise RuntimeError("FMP returned an empty response")
-    _FMP_RUN_CACHE[key] = payload
+    with _FMP_LOCK:
+        _FMP_RUN_CACHE[key] = payload
     return payload
 
 

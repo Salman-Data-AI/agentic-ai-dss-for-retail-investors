@@ -24,27 +24,38 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     )
 
     calls = []
+    fetched = []
     written = []
+    summaries = []
 
-    def fake_run_agent(ticker, rules, model, evaluation_type):
+    def fake_execute_tool_plan(ticker, plan):
+        fetched.append({"ticker": ticker, "plan": plan})
+        return {"get_quote": {"ticker": ticker, "name": f"{ticker} Corp"}}
+
+    def fake_evaluate_batch(items, rules, model, evaluation_type):
         calls.append({
-            "ticker": ticker,
+            "items": items,
             "rules": rules,
             "model": model,
             "evaluation_type": evaluation_type,
         })
-        return {
-            "ticker": ticker,
-            "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
-            "rationale": f"{ticker} rationale",
-            "data_fetched": {},
-        }
+        return [
+            {
+                "ticker": item["ticker"],
+                "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
+                "rationale": f"{item['ticker']} rationale",
+                "data_fetched": {},
+            }
+            for item in items
+        ]
 
     monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "MAX_WORKERS", 1)
     monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
-    monkeypatch.setattr(pipeline, "run_agent", fake_run_agent)
+    monkeypatch.setattr(pipeline, "_execute_tool_plan", fake_execute_tool_plan)
+    monkeypatch.setattr(pipeline, "evaluate_signals_from_data_batch", fake_evaluate_batch)
     monkeypatch.setattr(pipeline, "write_signals", lambda signals: written.extend(signals))
-    monkeypatch.setattr(pipeline, "get_quote", lambda ticker: {"name": f"{ticker} Corp"})
+    monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: summaries.append(summary))
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "load_settings", lambda: {
@@ -56,23 +67,20 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
 
     result = pipeline.run_analysis()
 
-    assert [call["ticker"] for call in calls] == ["AAPL", "MSFT", "JPM"]
-    assert calls[0] == {
-        "ticker": "AAPL",
-        "rules": "buy rules",
-        "model": "test-model",
-        "evaluation_type": "BUY_EVAL",
+    assert [item["ticker"] for item in calls[0]["items"]] == ["AAPL", "MSFT"]
+    assert calls[0]["rules"] == "buy rules"
+    assert calls[0]["model"] == "test-model"
+    assert calls[0]["evaluation_type"] == "BUY_EVAL"
+    assert calls[0]["items"][0]["fetched_data"] == {"get_quote": {"ticker": "AAPL", "name": "AAPL Corp"}}
+    assert [item["ticker"] for item in calls[1]["items"]] == ["JPM"]
+    assert calls[1]["rules"] == "sell rules"
+    assert calls[1]["evaluation_type"] == "SELL_EVAL"
+    assert calls[1]["items"][0]["fetched_data"]["holding"] == {
+        "entry_price": 195.5,
+        "qty": 10,
+        "entry_date": "2024-11-15",
     }
-    assert calls[1] == {
-        "ticker": "MSFT",
-        "rules": "buy rules",
-        "model": "test-model",
-        "evaluation_type": "BUY_EVAL",
-    }
-    assert "My entry price for JPM is $195.5." in calls[2]["rules"]
-    assert "I bought 10 shares on 2024-11-15." in calls[2]["rules"]
-    assert calls[2]["rules"].endswith("sell rules")
-    assert calls[2]["evaluation_type"] == "SELL_EVAL"
+    assert len(fetched) == 3
 
     assert len(written) == 3
     assert [record["signal_type"] for record in written] == ["BUY_EVAL", "BUY_EVAL", "SELL_EVAL"]
@@ -83,12 +91,16 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert written[1]["data_fetched"]["name"] == "MSFT Corp"
     assert written[2]["data_fetched"]["name"] == "JPM Corp"
     assert written[2]["entry_price"] == 195.5
-    assert result == {
-        "run_date": "2026-07-02 12:34:56",
-        "signal_count": 3,
-        "fmp_requests_this_run": 0,
-        "fmp_requests_today": 0,
-    }
+    assert all(record["run_elapsed_seconds"] == result["elapsed_seconds"] for record in written)
+    assert result["run_date"] == "2026-07-02 12:34:56"
+    assert result["signal_count"] == 3
+    assert result["fmp_requests_this_run"] == 0
+    assert result["fmp_requests_today"] == 0
+    assert result["max_workers"] == 1
+    assert result["ticker_timings"][0]["ticker"] == "AAPL"
+    assert result["ticker_timings"][2]["signal_type"] == "SELL_EVAL"
+    assert set(result["batch_timings"]) == {"BUY_EVAL", "SELL_EVAL"}
+    assert summaries == [result]
 
 
 def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, monkeypatch):
@@ -110,39 +122,47 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     calls = []
     written = []
 
-    def fake_run_agent(ticker, rules, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, model, evaluation_type):
         calls.append({
-            "ticker": ticker,
+            "tickers": [item["ticker"] for item in items],
             "rules": rules,
             "model": model,
             "evaluation_type": evaluation_type,
         })
-        return {
-            "ticker": ticker,
-            "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
-            "rationale": "ok",
-            "data_fetched": {"name": ticker},
-        }
+        return [
+            {
+                "ticker": item["ticker"],
+                "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
+                "rationale": "ok",
+                "data_fetched": {"name": item["ticker"]},
+            }
+            for item in items
+        ]
 
     monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "MAX_WORKERS", 1)
     monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
-    monkeypatch.setattr(pipeline, "run_agent", fake_run_agent)
+    monkeypatch.setattr(pipeline, "_execute_tool_plan", lambda ticker, plan: {"get_quote": {"name": ticker}})
+    monkeypatch.setattr(pipeline, "evaluate_signals_from_data_batch", fake_evaluate_batch)
     monkeypatch.setattr(pipeline, "write_signals", lambda signals: written.extend(signals))
+    monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
 
     pipeline.run_analysis()
 
     assert calls[0] == {
-        "ticker": "AAPL",
+        "tickers": ["AAPL"],
         "rules": "runtime buy rules",
         "model": "gpt-5.4-nano",
         "evaluation_type": "BUY_EVAL",
     }
-    assert calls[1]["ticker"] == "MSFT"
-    assert calls[1]["model"] == "gpt-5.4-nano"
-    assert calls[1]["evaluation_type"] == "SELL_EVAL"
-    assert calls[1]["rules"].endswith("runtime sell rules")
+    assert calls[1] == {
+        "tickers": ["MSFT"],
+        "rules": "runtime sell rules",
+        "model": "gpt-5.4-nano",
+        "evaluation_type": "SELL_EVAL",
+    }
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"gpt-5.4-nano"}
 
@@ -159,19 +179,25 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     calls = []
     written = []
 
-    def fake_run_agent(ticker, rules, model, evaluation_type):
-        calls.append(ticker)
-        return {
-            "ticker": ticker,
-            "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
-            "rationale": "ok",
-            "data_fetched": {"name": ticker},
-        }
+    def fake_evaluate_batch(items, rules, model, evaluation_type):
+        calls.extend(item["ticker"] for item in items)
+        return [
+            {
+                "ticker": item["ticker"],
+                "signal": "SKIP" if evaluation_type == "BUY_EVAL" else "HOLD",
+                "rationale": "ok",
+                "data_fetched": {"name": item["ticker"]},
+            }
+            for item in items
+        ]
 
     monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "MAX_WORKERS", 1)
     monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
-    monkeypatch.setattr(pipeline, "run_agent", fake_run_agent)
+    monkeypatch.setattr(pipeline, "_execute_tool_plan", lambda ticker, plan: {"get_quote": {"name": ticker}})
+    monkeypatch.setattr(pipeline, "evaluate_signals_from_data_batch", fake_evaluate_batch)
     monkeypatch.setattr(pipeline, "write_signals", lambda signals: written.extend(signals))
+    monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "load_settings", lambda: {

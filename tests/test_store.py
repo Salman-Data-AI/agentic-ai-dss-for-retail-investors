@@ -16,6 +16,7 @@ def test_write_signals_initializes_table_and_round_trips(temp_db_path):
         "entry_price": None,
         "provider": "anthropic",
         "model": "claude-test",
+        "run_elapsed_seconds": 12.34,
     }]
 
     store.write_signals(signals)
@@ -40,6 +41,7 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
             "entry_price": None,
             "provider": "anthropic",
             "model": "claude-test",
+            "run_elapsed_seconds": 5.0,
         },
         {
             "run_date": "2026-07-02 09:00:00",
@@ -51,6 +53,7 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
             "entry_price": 300.0,
             "provider": "openai",
             "model": "gpt-test",
+            "run_elapsed_seconds": 7.5,
         },
         {
             "run_date": "2026-07-02 09:00:00",
@@ -62,6 +65,7 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
             "entry_price": None,
             "provider": "groq",
             "model": "llama-test",
+            "run_elapsed_seconds": 7.5,
         },
     ])
 
@@ -73,6 +77,7 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
     assert latest[1]["data_fetched"] == {"name": "Microsoft", "nested": {"ok": True}}
     assert latest[0]["provider"] == "groq"
     assert latest[1]["model"] == "gpt-test"
+    assert latest[0]["run_elapsed_seconds"] == 7.5
 
 
 def test_init_migrates_legacy_table_and_preserves_old_rows(temp_db_path):
@@ -108,17 +113,20 @@ def test_init_migrates_legacy_table_and_preserves_old_rows(temp_db_path):
         "entry_price": None,
         "provider": "openai",
         "model": "gpt-test",
+        "run_elapsed_seconds": 3.21,
     }])
 
     with sqlite3.connect(temp_db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
 
-    assert {"provider", "model"}.issubset(columns)
+    assert {"provider", "model", "run_elapsed_seconds"}.issubset(columns)
 
     old_rows = store.read_filtered_signals(run_date="2026-07-01 09:00:00")
     latest = store.read_latest_signals()
 
     assert old_rows[0]["provider"] is None
     assert old_rows[0]["model"] is None
+    assert old_rows[0]["run_elapsed_seconds"] is None
     assert latest[0]["provider"] == "openai"
     assert latest[0]["model"] == "gpt-test"
+    assert latest[0]["run_elapsed_seconds"] == 3.21

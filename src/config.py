@@ -8,7 +8,7 @@
 
 
 # --- LLM provider and model ---
-# PROVIDER must be one of: "anthropic", "openai", "grok", "groq", "deepseek".
+# PROVIDER must be one of: "anthropic", "openai", "grok", "groq", "deepseek", "gemini", "cerebras".
 PROVIDER = "anthropic"
 
 # Default to low-cost, tool-capable models for each provider.
@@ -20,6 +20,8 @@ PROVIDER_DEFAULT_MODELS = {
     "grok": "grok-4.3",
     "groq": "llama-3.1-8b-instant",
     "deepseek": "deepseek-v4-flash",
+    "gemini": "gemini-2.5-flash",   # model ID present on test account; generation UNTESTED (403 project-access)
+    "cerebras": "gpt-oss-120b",     # VALIDATED via live tool-calling smoke test
 }
 
 PROVIDER_SETTINGS = {
@@ -42,6 +44,14 @@ PROVIDER_SETTINGS = {
     "deepseek": {
         "api_key_env": "DEEPSEEK_API_KEY",
         "base_url": "https://api.deepseek.com",
+    },
+    "gemini": {
+        "api_key_env": "GEMINI_API_KEY",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    },
+    "cerebras": {
+        "api_key_env": "CEREBRAS_API_KEY",
+        "base_url": "https://api.cerebras.ai/v1",
     },
 }
 

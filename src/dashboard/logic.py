@@ -68,6 +68,7 @@ def build_history_rows(results: list[dict]) -> list[dict]:
         name = s.get("data_fetched", {}).get("name") or s["ticker"]
         rows.append({
             "Run date": s["run_date"],
+            "Duration": _format_duration(s.get("run_elapsed_seconds")),
             "Ticker": s["ticker"],
             "Company": name,
             "Type": "BUY eval" if s["signal_type"] == "BUY_EVAL" else "SELL eval",
@@ -77,3 +78,18 @@ def build_history_rows(results: list[dict]) -> list[dict]:
             "Rationale": s.get("rationale") or "",
         })
     return rows
+
+
+def escape_markdown_math(text: str) -> str:
+    """Escape dollar signs so Streamlit does not render prices as LaTeX."""
+    return text.replace("$", r"\$")
+
+
+def _format_duration(seconds) -> str:
+    if seconds is None:
+        return ""
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):
+        return ""
+    return f"{value:.1f}s"

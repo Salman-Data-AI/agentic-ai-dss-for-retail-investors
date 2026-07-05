@@ -30,11 +30,13 @@ def _init(conn: sqlite3.Connection) -> None:
             data_fetched TEXT,
             entry_price REAL,
             provider    TEXT,
-            model       TEXT
+            model       TEXT,
+            run_elapsed_seconds REAL
         )
     """)
     _ensure_column(conn, "provider", "TEXT")
     _ensure_column(conn, "model", "TEXT")
+    _ensure_column(conn, "run_elapsed_seconds", "REAL")
     conn.commit()
 
 
@@ -54,8 +56,8 @@ def write_signals(signals: list[dict]) -> None:
     conn.executemany(
         """
         INSERT INTO signals
-            (run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model, run_elapsed_seconds)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -68,6 +70,7 @@ def write_signals(signals: list[dict]) -> None:
                 s.get("entry_price"),
                 s.get("provider"),
                 s.get("model"),
+                s.get("run_elapsed_seconds"),
             )
             for s in signals
         ],
@@ -82,7 +85,7 @@ def read_latest_signals() -> list[dict]:
     _init(conn)
     rows = conn.execute(
         """
-        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model
+        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model, run_elapsed_seconds
         FROM signals
         WHERE run_date = (SELECT MAX(run_date) FROM signals)
         ORDER BY signal_type, ticker
@@ -122,7 +125,7 @@ def read_filtered_signals(
     _init(conn)
     rows  = conn.execute(
         f"""
-        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model
+        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model, run_elapsed_seconds
         FROM signals
         WHERE {where}
         ORDER BY run_date DESC, signal_type, ticker
@@ -166,4 +169,5 @@ def _row_to_dict(r: tuple) -> dict:
         "entry_price":  r[6],
         "provider":     r[7],
         "model":        r[8],
+        "run_elapsed_seconds": r[9],
     }

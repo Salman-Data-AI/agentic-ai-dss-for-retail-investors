@@ -16,8 +16,8 @@ import streamlit as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from main import run_analysis
-from dashboard.logic import build_history_rows, split_signal_groups
+from main import read_latest_run_summary, run_analysis
+from dashboard.logic import build_history_rows, escape_markdown_math, split_signal_groups
 from agent.tools import get_fmp_request_count
 from settings import (
     PORTFOLIO_COLUMNS,
@@ -529,7 +529,7 @@ def _render_card(s: dict) -> None:
             caption += f" · `{model}`"
         st.caption(caption)
         with st.expander("Why this signal?"):
-            st.write(s.get("rationale") or "No rationale available.")
+            st.markdown(escape_markdown_math(s.get("rationale") or "No rationale available."))
 
         data = {
             k: v for k, v in s.get("data_fetched", {}).items()
@@ -560,6 +560,15 @@ st.title("Agentic DSS for Retail Investors")
 current_settings = load_settings()
 st.caption(f"Provider: `{current_settings['provider']}` · Model: `{current_settings['model']}`")
 st.metric("FMP requests today", get_fmp_request_count())
+latest_run_summary = read_latest_run_summary()
+if latest_run_summary:
+    st.caption(
+        "Latest run timing: "
+        f"{latest_run_summary.get('elapsed_seconds', 0):.1f}s total, "
+        f"{latest_run_summary.get('signal_count', 0)} signals, "
+        f"{latest_run_summary.get('fmp_requests_this_run', 0)} FMP requests, "
+        f"{latest_run_summary.get('max_workers', 0)} workers"
+    )
 
 if st.button("Run Analysis", type="primary"):
     with st.spinner("Agent evaluating your stocks — this takes ~10-20 seconds..."):
@@ -596,6 +605,15 @@ with tab_latest:
         if latest_model:
             latest_caption += f" · `{latest_model}`"
         st.caption(latest_caption)
+        if latest_run_summary.get("ticker_timings"):
+            slowest = max(
+                latest_run_summary["ticker_timings"],
+                key=lambda row: row.get("elapsed_seconds", 0),
+            )
+            st.caption(
+                f"Slowest ticker: `{slowest.get('ticker')}` "
+                f"({slowest.get('elapsed_seconds', 0):.1f}s)"
+            )
 
         buy_signals, sell_signals = split_signal_groups(signals)
 

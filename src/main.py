@@ -10,11 +10,15 @@ Usage:
 
 import os
 import sys
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from time import perf_counter
 
 import pandas as pd
 from dotenv import load_dotenv
 from paths import (
+    analysis_summary_path,
     executable_env_path,
     seed_user_csv_defaults,
     user_data_dir,
@@ -33,12 +37,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from settings import clean_portfolio_frame, clean_watchlist_frame, load_settings
-from agent import run_agent
-from agent.tools import get_fmp_request_count, get_fmp_run_request_count, get_quote
+from agent.agent import _TOOL_DISPATCH, evaluate_signals_from_data_batch
+from agent.tool_planner import PlannedTool, plan_tools_for_rules
+from agent.tools import get_fmp_request_count, get_fmp_run_request_count
 from database import write_signals
 
 _USER_DATA_DIR = user_data_dir()
 _DATA_DIR = _USER_DATA_DIR
+MAX_WORKERS = 3
 
 
 def _ensure_data_files() -> None:
@@ -60,76 +66,211 @@ def _load_portfolio() -> list[dict]:
     return clean_portfolio_frame(df).to_dict(orient="records")
 
 
-def _ensure_name(signal: dict, ticker: str) -> None:
+def _ensure_name(signal: dict, ticker: str, fetched_data: dict | None = None) -> None:
     if signal["data_fetched"].get("name"):
         return
-    quote = get_quote(ticker)
+    quote = (fetched_data or {}).get("get_quote") or {}
     signal["data_fetched"]["name"] = quote.get("name", ticker)
 
 
+def _execute_tool_plan(ticker: str, plan: list[PlannedTool]) -> dict:
+    fetched = {}
+    for planned_tool in plan:
+        fn = _TOOL_DISPATCH.get(planned_tool.name)
+        if not fn:
+            fetched[planned_tool.name] = {"error": f"Unknown tool: {planned_tool.name}"}
+            continue
+        fetched[planned_tool.name] = fn(ticker=ticker, **planned_tool.args)
+    return fetched
+
+
+def _fetch_job(job: dict) -> dict:
+    started = perf_counter()
+    fetched_data = _execute_tool_plan(job["ticker"], job["tool_plan"])
+    if job.get("context_data"):
+        fetched_data.update(job["context_data"])
+    return {
+        "index": job["index"],
+        "elapsed": perf_counter() - started,
+        "ticker": job["ticker"],
+        "signal_type": job["metadata"]["signal_type"],
+        "fetched_data": fetched_data,
+        "job": job,
+    }
+
+
+def _fetch_jobs(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
+    if not jobs:
+        return [], []
+    fetched_results = [None] * len(jobs)
+    timings = [None] * len(jobs)
+    workers = min(MAX_WORKERS, len(jobs))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_job = {
+            executor.submit(_fetch_job, job): job
+            for job in jobs
+        }
+        for future in as_completed(future_to_job):
+            job = future_to_job[future]
+            result = future.result()
+            fetched_results[result["index"]] = result
+            timings[result["index"]] = {
+                "ticker": result["ticker"],
+                "signal_type": result["signal_type"],
+                "fetch_elapsed_seconds": round(result["elapsed"], 3),
+            }
+            print(
+                f"  {job['ticker']:<8} fetched "
+                f"({result['elapsed']:.1f}s)",
+                flush=True,
+            )
+    return fetched_results, timings
+
+
+def _evaluate_group(fetched_jobs: list[dict], *, rules: str, model: str, evaluation_type: str) -> tuple[list[dict], float]:
+    if not fetched_jobs:
+        return [], 0.0
+    started = perf_counter()
+    signals = evaluate_signals_from_data_batch(
+        [
+            {
+                "ticker": item["ticker"],
+                "fetched_data": item["fetched_data"],
+            }
+            for item in fetched_jobs
+        ],
+        rules=rules,
+        model=model,
+        evaluation_type=evaluation_type,
+    )
+    elapsed = perf_counter() - started
+    for signal, item in zip(signals, fetched_jobs):
+        _ensure_name(signal, item["ticker"], item["fetched_data"])
+        signal.update(item["job"]["metadata"])
+    return signals, elapsed
+
+
+def _format_plan(plan: list[PlannedTool]) -> str:
+    return ", ".join(
+        tool.name if not tool.args else f"{tool.name}{tool.args}"
+        for tool in plan
+    )
+
+
+def _write_run_summary(summary: dict) -> None:
+    path = analysis_summary_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, sort_keys=True)
+
+
+def read_latest_run_summary() -> dict:
+    try:
+        with open(analysis_summary_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+
+
 def run_analysis() -> dict:
+    started = perf_counter()
     settings = load_settings()
     run_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    all_signals: list[dict] = []
+    jobs: list[dict] = []
     run_metadata = {
         "provider": settings["provider"],
         "model": settings["model"],
     }
+    buy_plan = plan_tools_for_rules(settings["buy_rules"])
+    sell_plan = plan_tools_for_rules(settings["sell_rules"])
 
-    # ------------------------------------------------------------------ BUY --
     print("\n-- BUY evaluation (watchlist) ----------------------------------")
+    print(f"  plan: {_format_plan(buy_plan)}")
     for ticker in _load_watchlist():
-        print(f"  {ticker:<8}", end=" ", flush=True)
-        signal = run_agent(
-            ticker=ticker,
-            rules=settings["buy_rules"],
-            model=settings["model"],
-            evaluation_type="BUY_EVAL",
-        )
-        _ensure_name(signal, ticker)
-        signal.update({"signal_type": "BUY_EVAL", "run_date": run_date, **run_metadata})
-        all_signals.append(signal)
-        print(f"→ {signal['signal']:4}  {signal.get('rationale', '')[:80]}")
+        jobs.append({
+            "index": len(jobs),
+            "ticker": ticker,
+            "rules": settings["buy_rules"],
+            "model": settings["model"],
+            "evaluation_type": "BUY_EVAL",
+            "tool_plan": buy_plan,
+            "metadata": {"signal_type": "BUY_EVAL", "run_date": run_date, **run_metadata},
+        })
 
-    # ----------------------------------------------------------------- SELL --
     print("\n-- SELL evaluation (portfolio) ---------------------------------")
+    print(f"  plan: {_format_plan(sell_plan)}")
     for holding in _load_portfolio():
         ticker = holding["ticker"]
-        # Inject entry context so the agent can evaluate % gain/loss rules
-        rules_with_context = (
-            f"My entry price for {ticker} is ${holding['entry_price']}. "
-            f"I bought {holding['qty']} shares on {holding['entry_date']}.\n\n"
-            + settings["sell_rules"]
-        )
-        print(f"  {ticker:<8}", end=" ", flush=True)
-        signal = run_agent(
-            ticker=ticker,
-            rules=rules_with_context,
-            model=settings["model"],
-            evaluation_type="SELL_EVAL",
-        )
-        _ensure_name(signal, ticker)
-        signal.update({
-            "signal_type": "SELL_EVAL",
-            "run_date": run_date,
-            "entry_price": holding["entry_price"],
-            **run_metadata,
+        jobs.append({
+            "index": len(jobs),
+            "ticker": ticker,
+            "rules": settings["sell_rules"],
+            "model": settings["model"],
+            "evaluation_type": "SELL_EVAL",
+            "tool_plan": sell_plan,
+            "context_data": {
+                "holding": {
+                    "entry_price": holding["entry_price"],
+                    "qty": holding["qty"],
+                    "entry_date": holding["entry_date"],
+                }
+            },
+            "metadata": {
+                "signal_type": "SELL_EVAL",
+                "run_date": run_date,
+                "entry_price": holding["entry_price"],
+                **run_metadata,
+            },
         })
-        all_signals.append(signal)
-        print(f"→ {signal['signal']:4}  {signal.get('rationale', '')[:80]}")
 
-    # -------------------------------------------------------- write to DB ---
+    fetched_jobs, timings = _fetch_jobs(jobs)
+    buy_fetched = [item for item in fetched_jobs if item["signal_type"] == "BUY_EVAL"]
+    sell_fetched = [item for item in fetched_jobs if item["signal_type"] == "SELL_EVAL"]
+    print("\n-- LLM evaluation ------------------------------------------------")
+    buy_signals, buy_eval_elapsed = _evaluate_group(
+        buy_fetched,
+        rules=settings["buy_rules"],
+        model=settings["model"],
+        evaluation_type="BUY_EVAL",
+    )
+    print(f"  BUY_EVAL batch:  {len(buy_signals)} signals ({buy_eval_elapsed:.1f}s)", flush=True)
+    sell_signals, sell_eval_elapsed = _evaluate_group(
+        sell_fetched,
+        rules=settings["sell_rules"],
+        model=settings["model"],
+        evaluation_type="SELL_EVAL",
+    )
+    print(f"  SELL_EVAL batch: {len(sell_signals)} signals ({sell_eval_elapsed:.1f}s)", flush=True)
+    all_signals = buy_signals + sell_signals
+
+    total_elapsed = perf_counter() - started
+    for signal in all_signals:
+        signal["run_elapsed_seconds"] = round(total_elapsed, 3)
     write_signals(all_signals)
-    print(f"\n✓ {len(all_signals)} signals saved  ·  run: {run_date}")
+    summary = {
+        "run_date": run_date,
+        "provider": settings["provider"],
+        "model": settings["model"],
+        "signal_count": len(all_signals),
+        "max_workers": min(MAX_WORKERS, len(jobs)) if jobs else 0,
+        "elapsed_seconds": round(total_elapsed, 3),
+        "fmp_requests_this_run": get_fmp_run_request_count(),
+        "fmp_requests_today": get_fmp_request_count(),
+        "buy_plan": _format_plan(buy_plan),
+        "sell_plan": _format_plan(sell_plan),
+        "batch_timings": {
+            "BUY_EVAL": round(buy_eval_elapsed, 3),
+            "SELL_EVAL": round(sell_eval_elapsed, 3),
+        },
+        "ticker_timings": timings,
+    }
+    _write_run_summary(summary)
+    print(f"\nOK {len(all_signals)} signals saved  -  run: {run_date}")
     print(f"FMP requests this run: {get_fmp_run_request_count()}")
     print(f"FMP requests today:    {get_fmp_request_count()}")
     print("  Launch dashboard:  streamlit run src/dashboard/app.py\n")
-    return {
-        "run_date": run_date,
-        "signal_count": len(all_signals),
-        "fmp_requests_this_run": get_fmp_run_request_count(),
-        "fmp_requests_today": get_fmp_request_count(),
-    }
+    return summary
 
 
 def main() -> None:
