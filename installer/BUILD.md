@@ -46,3 +46,7 @@ and portfolio survive uninstall/reinstall.
 Final manual verification is still required on a clean Windows machine or VM with
 no Python installed: run the setup executable, launch the installed app, save
 settings/API keys, and complete one real analysis run.
+
+The installer intentionally does not auto-launch the app at the end of setup.
+Launch the installed app from the desktop shortcut or the Start Menu after the
+installer exits.

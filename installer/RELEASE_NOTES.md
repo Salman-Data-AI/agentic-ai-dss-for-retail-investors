@@ -17,8 +17,8 @@ To continue:
 2. If you see "Windows protected your PC", click **More info**.
 3. Click **Run anyway**.
 4. Follow the installer prompts.
-5. Leave **Launch Agentic AI DSS for Retail Investors now** checked if you want the
-   app to open immediately after installation.
+5. When installation finishes, open the app from the desktop shortcut or the
+   Start Menu.
 
 You may see the same warning once more the first time the app itself opens. If so,
 click **More info**, then **Run anyway** again.

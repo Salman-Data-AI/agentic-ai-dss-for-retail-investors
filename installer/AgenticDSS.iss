@@ -34,9 +34,6 @@ Source: "dist-fixed\AgenticDSS\*"; DestDir: "{app}"; Flags: ignoreversion recurs
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 
-[Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
-
 [Code]
 function InitializeSetup(): Boolean;
 var
