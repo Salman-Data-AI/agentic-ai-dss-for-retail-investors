@@ -583,17 +583,17 @@ if st.button("Run Analysis", type="primary"):
 
 st.divider()
 
-# ------------------------------------------------------------------- tabs
-tab_latest, tab_history, tab_metrics, tab_settings = st.tabs([
-    "Latest Run",
-    "History",
-    "Metrics Reference",
-    "Settings",
-])
+# ------------------------------------------------------------------- views
+selected_view = st.radio(
+    "Dashboard view",
+    ["Latest Run", "History", "Metrics Reference", "Settings"],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
 
 # ---------------------------------------------------------- Tab 1: Latest
-with tab_latest:
+if selected_view == "Latest Run":
     signals = read_latest_signals()
 
     if not signals:
@@ -637,7 +637,7 @@ with tab_latest:
 
 
 # --------------------------------------------------------- Tab 2: History
-with tab_history:
+if selected_view == "History":
     st.caption("Select at least one filter to load results.")
 
     run_dates   = read_run_dates()
@@ -705,12 +705,12 @@ with tab_history:
 
 
 # -------------------------------------------------- Tab 3: Metrics Reference
-with tab_metrics:
+if selected_view == "Metrics Reference":
     _render_metrics_reference()
 
 
 # -------------------------------------------------------- Tab 4: Settings
-with tab_settings:
+if selected_view == "Settings":
     settings = load_settings()
     env_values = read_env_values()
     st.caption(f"Settings folder: `{user_data_dir()}`")
