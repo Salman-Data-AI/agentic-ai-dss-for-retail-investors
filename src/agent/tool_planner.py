@@ -12,8 +12,19 @@ class PlannedTool:
     args: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class PlannedToolsDiagnostics:
+    tools: list[PlannedTool]
+    fallback_only: bool
+
+
 def plan_tools_for_rules(rules: str) -> list[PlannedTool]:
     """Return the fixed tool set needed to evaluate these rules for any ticker."""
+    return plan_tools_with_diagnostics(rules).tools
+
+
+def plan_tools_with_diagnostics(rules: str) -> PlannedToolsDiagnostics:
+    """Return planned tools plus whether the default quote fallback was the only match."""
     text = _normalize(rules)
     planned: list[PlannedTool] = []
 
@@ -94,7 +105,9 @@ def plan_tools_for_rules(rules: str) -> list[PlannedTool]:
     if _mentions_any(text, "earnings date", "earnings surprise", "upcoming earnings", "eps beat", "eps miss"):
         add("get_earnings")
 
-    return planned or [PlannedTool("get_quote")]
+    if planned:
+        return PlannedToolsDiagnostics(tools=planned, fallback_only=False)
+    return PlannedToolsDiagnostics(tools=[PlannedTool("get_quote")], fallback_only=True)
 
 
 def _normalize(value: str) -> str:

@@ -13,7 +13,7 @@ from paths import seed_user_csv_defaults, user_data_file, user_env_path
 
 
 SETTINGS_FILENAME = "settings.json"
-SETTINGS_KEYS = ("provider", "model", "buy_rules", "sell_rules")
+SETTINGS_KEYS = ("provider", "model", "buy_rules", "sell_rules", "temperature")
 PORTFOLIO_COLUMNS = ["ticker", "qty", "entry_price", "entry_date"]
 WATCHLIST_COLUMNS = ["ticker"]
 
@@ -25,6 +25,7 @@ def default_settings() -> dict:
         "model": default_model_for_provider(provider),
         "buy_rules": config.BUY_RULES,
         "sell_rules": config.SELL_RULES,
+        "temperature": _parse_temperature(getattr(config, "TEMPERATURE", None)),
     }
 
 
@@ -51,6 +52,10 @@ def load_settings() -> dict:
     for key in SETTINGS_KEYS:
         if key == "model":
             continue
+        if key == "temperature":
+            if key in data:
+                settings[key] = _parse_temperature(data[key])
+            continue
         if key in data and isinstance(data[key], str):
             settings[key] = data[key]
 
@@ -64,10 +69,13 @@ def save_settings(values: dict) -> None:
     """Write non-secret settings to settings.json."""
     current = load_settings()
     provider = str(values.get("provider", current["provider"]))
-    payload = {
-        key: str(values.get(key, current[key]))
-        for key in SETTINGS_KEYS
-    }
+    payload = {}
+    for key in SETTINGS_KEYS:
+        if key == "temperature":
+            parsed_temperature = _parse_temperature(values.get(key, current[key]))
+            payload[key] = None if parsed_temperature is None else str(parsed_temperature)
+        else:
+            payload[key] = str(values.get(key, current[key]))
     payload["provider"] = provider
     payload["model"] = default_model_for_provider(provider)
     if payload["provider"] not in config.PROVIDER_SETTINGS:
@@ -76,6 +84,15 @@ def save_settings(values: dict) -> None:
     path = Path(settings_path())
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _parse_temperature(value) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def read_env_values() -> dict[str, str]:

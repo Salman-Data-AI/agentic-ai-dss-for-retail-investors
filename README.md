@@ -92,6 +92,8 @@ MODEL = "claude-sonnet-4-6"
 
 Use a model that supports tool calling. OpenAI-compatible providers use the configured base URLs in `PROVIDER_SETTINGS`; update those values in `config.py` if a provider changes its endpoint.
 
+`TEMPERATURE` is optional and defaults to `None`, which means the provider default is used and no temperature parameter is sent. Setting a float such as `0.0` requests reduced run-to-run variation, but it does not guarantee identical or correct outputs.
+
 ### Set your BUY rules
 
 Write your entry criteria in plain English inside the `BUY_RULES` string:
@@ -184,6 +186,16 @@ python src/main.py
 
 Results are printed to the terminal and saved to the database. You can launch the dashboard afterwards to view them.
 
+### Consistency measurement
+
+Developers can run a small stability check:
+
+```bash
+python src/consistency_check.py --runs 3 --tickers AAPL,MSFT
+```
+
+The script fetches data once, evaluates the same fetched inputs multiple times, and reports per-ticker signal agreement plus disagreements. It measures output stability only; it is not a correctness proof.
+
 ### Packaged app self-test
 
 After building the Windows onedir app, run `dist\AgenticDSS\AgenticDSS.exe --selftest` to check live FMP and LLM connectivity from inside the frozen executable without launching the UI.
@@ -232,10 +244,10 @@ The CI build starts from a clean checkout with no local `.env` file. The shared 
 2. For each stock, it identifies which data points your rules reference
 3. It fetches only those data points from Financial Modeling Prep
 4. It evaluates the data against your rules and decides the signal: `BUY` or `SKIP` for watchlist stocks, `SELL` or `HOLD` for portfolio holdings
-5. It writes a plain-language explanation of the signal
+5. It writes a plain-language explanation of the signal and asks the model to report the governing rule it believes it applied
 6. Results are saved locally to `db/signals.db` and displayed in the dashboard
 
-Every run is logged to the database for auditability, including the provider and model that produced each signal. The dashboard always shows the most recent run.
+Every run is logged to the database for auditability, including the provider, model, optional temperature, exact rule text applied to each row, and the model-reported `triggering_rule`. The `rules_applied` field stores the rule block in force at the time of the run. The `triggering_rule` field is reported by the model and checked for presence, not independently verified for correctness. The dashboard always shows the most recent run.
 
 ### Market data tools
 

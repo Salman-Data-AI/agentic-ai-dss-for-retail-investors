@@ -52,10 +52,11 @@ Responsibilities:
 - Read `src/data/watchlist.csv` for BUY evaluations.
 - Read `src/data/portfolio.csv` for SELL evaluations.
 - Plan the required BUY and SELL tools once per run.
+- Print a console warning if a rule set maps only to the quote fallback.
 - Fetch the planned metrics for each ticker.
 - Fetch ticker data in parallel using a small worker pool.
 - Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group.
-- Add metadata such as `signal_type`, `run_date`, company name, and entry price.
+- Add metadata such as `signal_type`, `run_date`, provider, model, optional temperature, rule text, company name, and entry price.
 - Persist all signals through `write_signals()`.
 
 The pipeline produces two categories of output:
@@ -71,7 +72,9 @@ For SELL evaluations, `main.py` includes holding-specific context in the per-tic
 
 It defines:
 
-- `MODEL`: Anthropic model name used by the agent.
+- `PROVIDER`: selected LLM provider.
+- `MODEL`: model name used by the agent.
+- `TEMPERATURE`: optional sampling temperature. `None` sends no temperature parameter; a float requests reduced variation without guaranteeing identical outputs.
 - `BUY_RULES`: plain-English entry criteria.
 - `SELL_RULES`: plain-English exit criteria.
 
@@ -79,7 +82,7 @@ The rules are intentionally written as natural language so the user can change s
 
 ### Tool Planning And Evaluation
 
-`src/agent/tool_planner.py::plan_tools_for_rules(rules)` converts each rule string into a fixed tool plan for that run. The BUY plan is reused for every watchlist ticker, and the SELL plan is reused for every portfolio holding.
+`src/agent/tool_planner.py::plan_tools_for_rules(rules)` converts each rule string into a fixed tool plan for that run. The BUY plan is reused for every watchlist ticker, and the SELL plan is reused for every portfolio holding. `plan_tools_with_diagnostics(rules)` returns the same plan plus a flag for the silent quote-fallback case, so `main.py` can warn when a rule set did not map to any specific data tool.
 
 `src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, model, evaluation_type)` is the LLM evaluation function. It evaluates a group of prefetched ticker payloads in one provider call.
 
@@ -96,6 +99,7 @@ The batch evaluator is instructed to return one object per ticker with exactly t
 {
   "ticker": "AAPL",
   "signal": "BUY | SKIP for BUY_EVAL, or SELL | HOLD for SELL_EVAL",
+  "triggering_rule": "Model-reported governing rule",
   "rationale": "Plain-English explanation",
   "data_fetched": {
     "metric_name": "metric value"
@@ -103,7 +107,7 @@ The batch evaluator is instructed to return one object per ticker with exactly t
 }
 ```
 
-The `evaluation_type` argument selects the allowed signal contract. `BUY_EVAL` prompts the model to choose only `BUY` or `SKIP`; `SELL_EVAL` prompts it to choose only `SELL` or `HOLD`. After parsing the JSON, `evaluate_signals_from_data_batch()` validates each returned `signal` against that contract. If parsing fails, the model returns a signal outside the active contract, omits a ticker, or the evaluator receives an unexpected stop reason, `_error()` returns a structured `ERROR` signal for the affected ticker. This keeps downstream storage and dashboard rendering consistent.
+The `evaluation_type` argument selects the allowed signal contract. `BUY_EVAL` prompts the model to choose only `BUY` or `SKIP`; `SELL_EVAL` prompts it to choose only `SELL` or `HOLD`. After parsing the JSON, `evaluate_signals_from_data_batch()` validates each returned `signal` against that contract and checks that `triggering_rule` is present and non-empty. The `triggering_rule` is the model's report of which rule it believes it applied; the code checks presence, not correctness. If parsing fails, the model returns a signal outside the active contract, omits a ticker, omits `triggering_rule`, or the evaluator receives an unexpected stop reason, `_error()` returns a structured `ERROR` signal for the affected ticker. Malformed `data_fetched` values are coerced to `{}` so downstream storage stays stable.
 
 ### Tool Schemas: `src/agent/tool_schemas.py`
 
@@ -170,7 +174,13 @@ CREATE TABLE IF NOT EXISTS signals (
     signal       TEXT NOT NULL,
     rationale    TEXT,
     data_fetched TEXT,
-    entry_price  REAL
+    entry_price  REAL,
+    provider     TEXT,
+    model        TEXT,
+    rules_applied TEXT,
+    triggering_rule TEXT,
+    temperature  REAL,
+    run_elapsed_seconds REAL
 )
 ```
 
@@ -182,6 +192,8 @@ Key functions:
 The agent does not read from the database. The database exists for persistence, auditability, and dashboard display.
 
 `data_fetched` is JSON-serialized as text. Nested dictionaries and lists from bundle tools are preserved on write and restored on read; no schema change is required for nested tool outputs.
+
+`rules_applied` stores the exact BUY or SELL rule block used for that signal row, so later rule edits do not change the audit context for old rows. `triggering_rule` stores the model-reported governing rule and is validated for presence only. `temperature` is nullable because the default configuration omits the parameter and lets the provider use its default.
 
 ### Dashboard: `src/dashboard/app.py`
 
@@ -210,7 +222,7 @@ Dashboard tabs:
 - `Latest Run`: reads and renders the newest stored analysis results.
 - `History`: requires at least one filter before reading matching audit rows.
 - `Metrics Reference`: static educational content for rule writing. It does not call FMP, contact an LLM, run analysis, or read/write SQLite at dashboard render time. Its hardcoded AAPL values were fetched once from FMP on 2026-07-05 at 16:05 UTC with `python scripts/fetch_metrics_snapshot.py AAPL`.
-- `Settings`: edits provider, rules, API keys, watchlist, and portfolio inputs.
+- `Settings`: edits provider, optional temperature, rules, API keys, watchlist, and portfolio inputs.
 
 ## Data Flow
 
@@ -315,10 +327,15 @@ Each evaluated ticker produces:
 - `ticker`: stock symbol.
 - `signal`: `BUY` or `SKIP` for watchlist evaluations; `SELL` or `HOLD` for portfolio evaluations; `ERROR` for failures.
 - `signal_type`: `BUY_EVAL` or `SELL_EVAL`.
+- `triggering_rule`: model-reported governing rule; presence is validated, correctness is not independently verified.
 - `rationale`: plain-English explanation.
 - `data_fetched`: JSON-serialized dictionary of metrics used.
 - `entry_price`: included for portfolio evaluations.
 - `run_date`: timestamp for grouping each batch run.
+- `provider`: provider selected for the run.
+- `model`: model selected for the run.
+- `rules_applied`: exact BUY or SELL rule block used for that row.
+- `temperature`: optional sampling temperature used for the run, or `NULL` when omitted.
 - `run_elapsed_seconds`: total wall-clock time for the batch run, repeated on each row so History can display run duration.
 
 ### Legacy Signal Display
@@ -389,7 +406,8 @@ To change the UI:
 - The FMP free tier is constrained by daily request limits; the app tracks daily usage locally and uses per-run caching to avoid duplicate calls.
 - Fundamentals are annual only. Quarterly fundamentals are not requested because the free tier can return plan-gating errors.
 - The planner maps user-rule wording to fixed tool sets, so ambiguous or novel wording may require planner updates.
-- The current database stores an audit log of generated signals but does not store raw historical market data.
+- The current database stores an audit log of generated signals and the rule text used for each signal, but it does not store raw historical market data beyond the compact `data_fetched` payload returned by the model.
+- Lower temperature can reduce variation, but it does not make LLM outputs deterministic or prove signal correctness.
 - The current analysis path evaluates tickers in parallel with `MAX_WORKERS = 3`.
 - The dashboard displays the latest run only.
 

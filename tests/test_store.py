@@ -16,6 +16,9 @@ def test_write_signals_initializes_table_and_round_trips(temp_db_path):
         "entry_price": None,
         "provider": "anthropic",
         "model": "claude-test",
+        "rules_applied": "Buy when RSI is below 35.",
+        "triggering_rule": "RSI is below 35.",
+        "temperature": 0.0,
         "run_elapsed_seconds": 12.34,
     }]
 
@@ -41,6 +44,9 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
             "entry_price": None,
             "provider": "anthropic",
             "model": "claude-test",
+            "rules_applied": "old rules",
+            "triggering_rule": "old rule",
+            "temperature": None,
             "run_elapsed_seconds": 5.0,
         },
         {
@@ -53,6 +59,9 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
             "entry_price": 300.0,
             "provider": "openai",
             "model": "gpt-test",
+            "rules_applied": "sell rules",
+            "triggering_rule": "profit target",
+            "temperature": 0.2,
             "run_elapsed_seconds": 7.5,
         },
         {
@@ -65,6 +74,9 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
             "entry_price": None,
             "provider": "groq",
             "model": "llama-test",
+            "rules_applied": "buy rules",
+            "triggering_rule": "oversold RSI",
+            "temperature": None,
             "run_elapsed_seconds": 7.5,
         },
     ])
@@ -77,6 +89,10 @@ def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker
     assert latest[1]["data_fetched"] == {"name": "Microsoft", "nested": {"ok": True}}
     assert latest[0]["provider"] == "groq"
     assert latest[1]["model"] == "gpt-test"
+    assert latest[0]["rules_applied"] == "buy rules"
+    assert latest[1]["triggering_rule"] == "profit target"
+    assert latest[0]["temperature"] is None
+    assert latest[1]["temperature"] == 0.2
     assert latest[0]["run_elapsed_seconds"] == 7.5
 
 
@@ -113,20 +129,29 @@ def test_init_migrates_legacy_table_and_preserves_old_rows(temp_db_path):
         "entry_price": None,
         "provider": "openai",
         "model": "gpt-test",
+        "rules_applied": "new rules",
+        "triggering_rule": "new rule",
+        "temperature": 0.0,
         "run_elapsed_seconds": 3.21,
     }])
 
     with sqlite3.connect(temp_db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
 
-    assert {"provider", "model", "run_elapsed_seconds"}.issubset(columns)
+    assert {"provider", "model", "rules_applied", "triggering_rule", "temperature", "run_elapsed_seconds"}.issubset(columns)
 
     old_rows = store.read_filtered_signals(run_date="2026-07-01 09:00:00")
     latest = store.read_latest_signals()
 
     assert old_rows[0]["provider"] is None
     assert old_rows[0]["model"] is None
+    assert old_rows[0]["rules_applied"] is None
+    assert old_rows[0]["triggering_rule"] is None
+    assert old_rows[0]["temperature"] is None
     assert old_rows[0]["run_elapsed_seconds"] is None
     assert latest[0]["provider"] == "openai"
     assert latest[0]["model"] == "gpt-test"
+    assert latest[0]["rules_applied"] == "new rules"
+    assert latest[0]["triggering_rule"] == "new rule"
+    assert latest[0]["temperature"] == 0.0
     assert latest[0]["run_elapsed_seconds"] == 3.21

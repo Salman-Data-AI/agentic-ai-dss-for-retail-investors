@@ -728,6 +728,12 @@ with tab_settings:
         disabled=True,
         help="Automatically selected low-cost model for the chosen provider.",
     )
+    temperature_value = "" if settings.get("temperature") is None else str(settings["temperature"])
+    temperature = st.text_input(
+        "Temperature",
+        value=temperature_value,
+        help="Optional. Blank uses the provider default; lower values may reduce variation but do not guarantee identical outputs.",
+    )
 
     provider_key_env = config.PROVIDER_SETTINGS[selected_provider]["api_key_env"]
     fmp_label = "FMP API key"
@@ -779,6 +785,7 @@ with tab_settings:
                     "model": model,
                     "buy_rules": buy_rules,
                     "sell_rules": sell_rules,
+                    "temperature": temperature.strip() or None,
                 })
                 save_api_keys(
                     provider=selected_provider,

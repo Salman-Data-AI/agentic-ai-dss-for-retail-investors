@@ -85,12 +85,13 @@ INSTRUCTIONS:
 1. Read the user's rules carefully.
 2. Use only the fetched data supplied by the application. Do not request tools or invent missing data.
 3. Evaluate each ticker independently against the relevant rule.
-4. Return your result as a JSON array. The array must contain exactly one object for each input ticker, using exactly these four fields:
+4. Return your result as a JSON array. The array must contain exactly one object for each input ticker, using exactly these five fields:
 
 [
   {{
     "ticker": "<ticker>",
     "signal": "<{allowed_signals}>",
+    "triggering_rule": "<The single user rule, quoted or closely paraphrased, that most directly drove this signal. For SKIP/HOLD, state which criterion was closest to being met and why it was not.>",
     "rationale": "<Explain what the key metric values mean in market terms, why they are or are not significant right now, and connect them to the signal. Three to four plain-English sentences. Do not just report pass/fail; explain what the numbers are telling the investor about the stock's current condition.>",
     "data_fetched": {{ "<metric_name>": <compact value>, ... }}
   }}
@@ -100,6 +101,7 @@ Rules:
 {signal_rules}
 
 Use only one of these signal values: {allowed_signals}.
+The rationale must name the triggering_rule in prose.
 Keep data_fetched compact and include only the metrics needed for the decision.
 
 CRITICAL: Your entire response must be ONLY the JSON array.
@@ -139,6 +141,7 @@ def evaluate_signals_from_data_batch(
     )
     settings = load_settings()
     provider = settings.get("provider") or getattr(config, "PROVIDER", "anthropic")
+    temperature = settings.get("temperature")
     if model == "claude-sonnet-4-6":
         model = settings.get("model") or model
     provider_settings = getattr(config, "PROVIDER_SETTINGS", {}).get(provider)
@@ -172,6 +175,7 @@ def evaluate_signals_from_data_batch(
             provider_settings=provider_settings,
             tool_schemas=[],
             max_tokens=_BATCH_MAX_TOKENS,
+            temperature=temperature,
         )
     except RuntimeError as exc:
         return [_error(item["ticker"], str(exc)) for item in items]
@@ -234,6 +238,13 @@ def _parse_signal_batch_response(
                 ),
             ))
             continue
+        triggering_rule = row.get("triggering_rule")
+        # The model reports this rule; validation checks presence, not correctness.
+        if not isinstance(triggering_rule, str) or not triggering_rule.strip():
+            results.append(_error(ticker, "Agent omitted non-empty triggering_rule from the response"))
+            continue
+        if not isinstance(row.get("data_fetched"), dict):
+            row["data_fetched"] = {}
         row["ticker"] = ticker
         results.append(row)
     return results
@@ -243,6 +254,7 @@ def _error(ticker: str, msg: str) -> dict:
     return {
         "ticker": ticker,
         "signal": "ERROR",
+        "triggering_rule": "",
         "rationale": msg,
         "data_fetched": {},
     }

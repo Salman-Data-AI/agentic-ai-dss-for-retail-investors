@@ -29,6 +29,7 @@ For each stock, it returns:
 
 - A signal: `BUY` or `SKIP` for watchlist stocks; `SELL` or `HOLD` for portfolio stocks; or `ERROR` if evaluation fails.
 - A rationale explaining why that signal was generated.
+- The model-reported rule or nearest rule criterion that drove the signal.
 - The specific data points used during evaluation.
 
 Example data points include:
@@ -70,14 +71,15 @@ above entry price, or the price is more than 15% below entry price.
 
 The system then:
 
-1. Reads the watchlist and portfolio CSV files.
-2. Sends each ticker and relevant rules to the AI agent.
-3. Lets the agent identify which data points are required.
-4. Fetches only those data points using local market-data tools.
-5. Evaluates the stock against the user's rules.
-6. Produces a structured signal and explanation.
-7. Saves the result in a local SQLite database.
-8. Displays the latest results in a Streamlit dashboard.
+1. Loads provider, model, optional temperature, BUY rules, and SELL rules from runtime settings merged over `src/config.py` defaults.
+2. Reads the watchlist and portfolio CSV files from the user's app-data folder, seeding defaults on first run.
+3. Plans the required market-data tools once for the BUY rules and once for the SELL rules.
+4. Warns in the console if a rule set maps only to the quote fallback rather than a specific metric tool.
+5. Fetches the planned data for each ticker using local market-data tools.
+6. Evaluates watchlist tickers in one BUY batch and portfolio holdings in one SELL batch.
+7. Produces a structured signal, rationale, compact data summary, and model-reported `triggering_rule`.
+8. Saves the result in a local SQLite database with the exact `rules_applied` for that row.
+9. Displays the latest results in a Streamlit dashboard.
 
 ## Main Functionalities
 
@@ -93,9 +95,9 @@ The portfolio file contains stocks the user already owns, including quantity, en
 
 The output helps the user identify whether an existing holding may meet exit, profit-taking, stop-loss, or risk-management criteria. Portfolio evaluations return `SELL` when the holding meets the user's exit criteria now and `HOLD` when it does not.
 
-### AI-Guided Data Selection
+### Rule-Based Data Selection
 
-The agent does not fetch every available metric by default. It reads the user's rules and decides which tools are needed.
+The system does not fetch every available metric by default. A deterministic rule planner reads the user's rules and selects which tools are needed before the LLM evaluates the prefetched data.
 
 For example:
 
@@ -118,13 +120,13 @@ The app tracks FMP request usage locally and uses an in-memory per-run cache so 
 
 Each signal includes a rationale that explains the market meaning of the data, not only whether a threshold passed or failed.
 
-The explanation is intended to help a retail investor understand why the system produced its recommendation.
+The explanation is intended to help a retail investor understand why the system produced its recommendation. The LLM is also required to return `triggering_rule`, which is the rule it reports as governing the signal. This is an explanation and auditability aid, not an independent proof that the correct rule fired.
 
 ### Audit Logging
 
-Every run is written to a local SQLite database. The stored record includes the ticker, signal type, signal, rationale, data used, entry price when relevant, and run timestamp.
+Every run is written to a local SQLite database. The stored record includes the ticker, signal type, signal, rationale, model-reported triggering rule, data used, entry price when relevant, provider, model, optional temperature, exact rules applied, run timestamp, and run elapsed time.
 
-This makes it possible to review the latest analysis and preserve a history of generated recommendations.
+This makes it possible to review the latest analysis and preserve a history of generated recommendations. Storing `rules_applied` means a later edit to BUY or SELL rules does not change the audit context for older rows.
 
 ### Dashboard View
 
@@ -141,6 +143,7 @@ It displays:
 - Expandable underlying data, including readable JSON for nested bundle outputs.
 - A static Metrics Reference tab that explains available metrics, source tools, rule phrasing, common interpretations, and real AAPL snapshot values.
 - A Settings tab for editing provider choice, model selection, API keys, BUY/SELL rules, watchlist rows, and portfolio rows.
+- Optional temperature control. Leaving it blank uses the provider default; setting a float can reduce run-to-run variation but does not guarantee identical or correct outputs.
 
 The Metrics Reference tab is informational only. It does not call Financial Modeling Prep, contact an LLM provider, read or write the database, or run an analysis. Its sample values are a real AAPL snapshot fetched once from FMP on 2026-07-05 at 16:05 UTC, so they are static examples rather than automatically refreshed market data.
 
@@ -159,6 +162,7 @@ The artefact is also suitable for research or demonstration contexts where expla
 5. Run the dashboard with Streamlit or execute the terminal pipeline.
 6. Review BUY, SKIP, SELL, and HOLD signals.
 7. Expand each result to inspect the rationale and data used.
+8. Use History to review prior stored rows, including the rules and metadata captured with the run.
 
 ## Key Design Principles
 
@@ -176,7 +180,7 @@ The same rules can be applied repeatedly to the same watchlist and portfolio str
 
 ### Auditability
 
-Results are stored locally in SQLite, creating a record of what the system recommended and what data supported that recommendation.
+Results are stored locally in SQLite, creating a record of what the system recommended, what rule text was in force, what data supported the recommendation, and which provider/model settings produced it.
 
 ### Modularity
 
@@ -191,8 +195,9 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - Fetch broader valuation, financial-health, annual statement, performance, profile, analyst, and earnings data through FMP bundle tools.
 - Fetch RSI, SMA, and selected technical indicators from FMP server-side endpoints.
 - Produce plain-English rationales.
-- Store signals in SQLite.
+- Store signals, exact applied rules, model-reported triggering rules, provider/model, optional temperature, and run timing in SQLite.
 - Display latest results in a Streamlit dashboard.
+- Provide a developer consistency-check script that measures signal stability across repeated LLM evaluations of identical fetched inputs.
 
 ## Limitations
 
@@ -204,8 +209,10 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - Annual fundamentals are supported. Quarterly fundamentals are not requested because free-tier endpoints can return plan-gating errors.
 - The Metrics Reference tab is static guidance for rule writing. Its AAPL snapshot values should not be interpreted as current market data after the documented fetch time.
 - It relies on the AI model's interpretation of the user's rules.
+- `triggering_rule` is reported by the model and validated for presence, not independently verified for correctness.
+- Lower temperature can reduce variation, but it does not make outputs deterministic or prove signal correctness.
 - Ambiguous or contradictory rules can lead to weaker recommendations.
-- It currently processes stocks sequentially.
+- It fetches ticker data with a small worker pool and then evaluates BUY and SELL groups in batches.
 - The dashboard currently displays the latest run rather than full historical analytics.
 
 ## Example Use Case

@@ -14,6 +14,10 @@ PROVIDER = "anthropic"
 # Default to low-cost, tool-capable models for each provider.
 MODEL = "claude-haiku-4-5-20251001"
 
+# None uses the provider default and sends no temperature parameter. A float such
+# as 0.0 requests reduced variation but does not guarantee reproducibility.
+TEMPERATURE = None
+
 PROVIDER_DEFAULT_MODELS = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-5.4-nano",
@@ -59,7 +63,11 @@ PROVIDER_SETTINGS = {
 # --- BUY rules ---
 # Write your entry criteria in plain English below.
 # The agent will figure out which data to fetch and how to evaluate it.
-# You can reference: RSI, price, 52-week high/low, PE ratio, EPS, SMA, volume.
+# You can reference recognized planner terms such as price, 52-week high/low,
+# volume, RSI, SMA, PE ratio, EPS, valuation ratios, financial health,
+# income statement, balance sheet, cash flow, performance/momentum, profile,
+# beta, EMA, ADX, Williams, volatility, price targets, analyst ratings,
+# analyst estimates, and earnings.
 
 BUY_RULES = """
 Consider buying a stock if ALL of the following are true:
