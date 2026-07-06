@@ -38,7 +38,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from settings import clean_portfolio_frame, clean_watchlist_frame, load_settings
 from agent.agent import _TOOL_DISPATCH, evaluate_signals_from_data_batch
-from agent.tool_planner import PlannedTool, plan_tools_for_rules
+from agent.tool_planner import PlannedTool, plan_tools_with_diagnostics
 from agent.tools import get_fmp_request_count, get_fmp_run_request_count
 from database import write_signals
 
@@ -181,12 +181,17 @@ def run_analysis() -> dict:
     run_metadata = {
         "provider": settings["provider"],
         "model": settings["model"],
+        "temperature": settings["temperature"],
     }
-    buy_plan = plan_tools_for_rules(settings["buy_rules"])
-    sell_plan = plan_tools_for_rules(settings["sell_rules"])
+    buy_plan_diagnostics = plan_tools_with_diagnostics(settings["buy_rules"])
+    sell_plan_diagnostics = plan_tools_with_diagnostics(settings["sell_rules"])
+    buy_plan = buy_plan_diagnostics.tools
+    sell_plan = sell_plan_diagnostics.tools
 
     print("\n-- BUY evaluation (watchlist) ----------------------------------")
     print(f"  plan: {_format_plan(buy_plan)}")
+    if buy_plan_diagnostics.fallback_only:
+        print("  WARNING: BUY rules matched no specific data tools; using quote fallback only. TODO: surface this warning in the dashboard.")
     for ticker in _load_watchlist():
         jobs.append({
             "index": len(jobs),
@@ -195,11 +200,18 @@ def run_analysis() -> dict:
             "model": settings["model"],
             "evaluation_type": "BUY_EVAL",
             "tool_plan": buy_plan,
-            "metadata": {"signal_type": "BUY_EVAL", "run_date": run_date, **run_metadata},
+            "metadata": {
+                "signal_type": "BUY_EVAL",
+                "run_date": run_date,
+                "rules_applied": settings["buy_rules"],
+                **run_metadata,
+            },
         })
 
     print("\n-- SELL evaluation (portfolio) ---------------------------------")
     print(f"  plan: {_format_plan(sell_plan)}")
+    if sell_plan_diagnostics.fallback_only:
+        print("  WARNING: SELL rules matched no specific data tools; using quote fallback only. TODO: surface this warning in the dashboard.")
     for holding in _load_portfolio():
         ticker = holding["ticker"]
         jobs.append({
@@ -220,6 +232,7 @@ def run_analysis() -> dict:
                 "signal_type": "SELL_EVAL",
                 "run_date": run_date,
                 "entry_price": holding["entry_price"],
+                "rules_applied": settings["sell_rules"],
                 **run_metadata,
             },
         })

@@ -63,6 +63,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
         "model": "test-model",
         "buy_rules": "buy rules",
         "sell_rules": "sell rules",
+        "temperature": 0.0,
     })
 
     result = pipeline.run_analysis()
@@ -87,6 +88,10 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert {record["run_date"] for record in written} == {"2026-07-02 12:34:56"}
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"test-model"}
+    assert {record["temperature"] for record in written} == {0.0}
+    assert written[0]["rules_applied"] == "buy rules"
+    assert written[1]["rules_applied"] == "buy rules"
+    assert written[2]["rules_applied"] == "sell rules"
     assert written[0]["data_fetched"]["name"] == "AAPL Corp"
     assert written[1]["data_fetched"]["name"] == "MSFT Corp"
     assert written[2]["data_fetched"]["name"] == "JPM Corp"
@@ -117,6 +122,7 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
         "model": "runtime-model",
         "buy_rules": "runtime buy rules",
         "sell_rules": "runtime sell rules",
+        "temperature": None,
     })
 
     calls = []
@@ -165,6 +171,9 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     }
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"gpt-5.4-nano"}
+    assert {record["temperature"] for record in written} == {None}
+    assert written[0]["rules_applied"] == "runtime buy rules"
+    assert written[1]["rules_applied"] == "runtime sell rules"
 
 
 def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_path, monkeypatch):
@@ -205,6 +214,7 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
         "model": "test-model",
         "buy_rules": "buy rules",
         "sell_rules": "sell rules",
+        "temperature": None,
     })
 
     pipeline.run_analysis()

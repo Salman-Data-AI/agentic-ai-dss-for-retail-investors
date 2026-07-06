@@ -583,17 +583,17 @@ if st.button("Run Analysis", type="primary"):
 
 st.divider()
 
-# ------------------------------------------------------------------- tabs
-tab_latest, tab_history, tab_metrics, tab_settings = st.tabs([
-    "Latest Run",
-    "History",
-    "Metrics Reference",
-    "Settings",
-])
+# ------------------------------------------------------------------- views
+selected_view = st.radio(
+    "Dashboard view",
+    ["Latest Run", "History", "Metrics Reference", "Settings"],
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
 
 # ---------------------------------------------------------- Tab 1: Latest
-with tab_latest:
+if selected_view == "Latest Run":
     signals = read_latest_signals()
 
     if not signals:
@@ -605,16 +605,6 @@ with tab_latest:
         if latest_model:
             latest_caption += f" · `{latest_model}`"
         st.caption(latest_caption)
-        if latest_run_summary.get("ticker_timings"):
-            slowest = max(
-                latest_run_summary["ticker_timings"],
-                key=lambda row: row.get("elapsed_seconds", 0),
-            )
-            st.caption(
-                f"Slowest ticker: `{slowest.get('ticker')}` "
-                f"({slowest.get('elapsed_seconds', 0):.1f}s)"
-            )
-
         buy_signals, sell_signals = split_signal_groups(signals)
 
         col_buy, col_sell = st.columns(2)
@@ -637,7 +627,7 @@ with tab_latest:
 
 
 # --------------------------------------------------------- Tab 2: History
-with tab_history:
+if selected_view == "History":
     st.caption("Select at least one filter to load results.")
 
     run_dates   = read_run_dates()
@@ -705,12 +695,12 @@ with tab_history:
 
 
 # -------------------------------------------------- Tab 3: Metrics Reference
-with tab_metrics:
+if selected_view == "Metrics Reference":
     _render_metrics_reference()
 
 
 # -------------------------------------------------------- Tab 4: Settings
-with tab_settings:
+if selected_view == "Settings":
     settings = load_settings()
     env_values = read_env_values()
     st.caption(f"Settings folder: `{user_data_dir()}`")
@@ -727,6 +717,12 @@ with tab_settings:
         value=settings["model"] if selected_provider == settings["provider"] else config.PROVIDER_DEFAULT_MODELS[selected_provider],
         disabled=True,
         help="Automatically selected low-cost model for the chosen provider.",
+    )
+    temperature_value = "" if settings.get("temperature") is None else str(settings["temperature"])
+    temperature = st.text_input(
+        "Temperature",
+        value=temperature_value,
+        help="Optional. Blank uses the provider default; lower values may reduce variation but do not guarantee identical outputs.",
     )
 
     provider_key_env = config.PROVIDER_SETTINGS[selected_provider]["api_key_env"]
@@ -779,6 +775,7 @@ with tab_settings:
                     "model": model,
                     "buy_rules": buy_rules,
                     "sell_rules": sell_rules,
+                    "temperature": temperature.strip() or None,
                 })
                 save_api_keys(
                     provider=selected_provider,

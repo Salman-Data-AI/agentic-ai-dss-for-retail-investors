@@ -50,12 +50,14 @@ class AnthropicAdapter:
         client=None,
         max_tokens: int = 1024,
         tool_schemas: list[dict] | None = None,
+        temperature: float | None = None,
     ) -> None:
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set for PROVIDER='anthropic'")
         self.model = model
         self.system = system
         self.max_tokens = max_tokens
+        self.temperature = temperature
         self.tools = TOOL_SCHEMAS if tool_schemas is None else tool_schemas
         self.messages = [{"role": "user", "content": user_content}]
         self.client = client or Anthropic(api_key=api_key)
@@ -69,6 +71,9 @@ class AnthropicAdapter:
         }
         if self.tools:
             kwargs["tools"] = self.tools
+        # Optional temperature can reduce variation, but it is not a determinism guarantee.
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
         response = self.client.messages.create(**kwargs)
 
         if response.stop_reason == "tool_use":
@@ -114,6 +119,7 @@ class OpenAICompatibleAdapter:
         client=None,
         max_tokens: int = 1024,
         tool_schemas: list[dict] | None = None,
+        temperature: float | None = None,
     ) -> None:
         if not api_key:
             raise RuntimeError("API key is not set for the selected OpenAI-compatible provider")
@@ -123,6 +129,7 @@ class OpenAICompatibleAdapter:
         self.model = model
         self.provider = provider
         self.max_tokens = max_tokens
+        self.temperature = temperature
         self.tools = self._render_tools(TOOL_SCHEMAS if tool_schemas is None else tool_schemas)
         self.messages = [
             {"role": "system", "content": system},
@@ -144,6 +151,9 @@ class OpenAICompatibleAdapter:
         if self.tools:
             kwargs["tools"] = self.tools
             kwargs["tool_choice"] = "auto"
+        # Optional temperature can reduce variation, but it is not a determinism guarantee.
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
         response = self.client.chat.completions.create(**kwargs)
         choice = response.choices[0]
         message = choice.message
@@ -243,6 +253,7 @@ def create_llm_client(
     provider_settings: dict,
     tool_schemas: list[dict] | None = None,
     max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> LLMClient:
     """Build the selected provider adapter from config-provided settings."""
     normalized = provider.lower().strip()
@@ -262,6 +273,8 @@ def create_llm_client(
             kwargs["tool_schemas"] = tool_schemas
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         return AnthropicAdapter(
             **kwargs,
         )
@@ -279,6 +292,8 @@ def create_llm_client(
             kwargs["tool_schemas"] = tool_schemas
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         return OpenAICompatibleAdapter(**kwargs)
 
     raise RuntimeError(

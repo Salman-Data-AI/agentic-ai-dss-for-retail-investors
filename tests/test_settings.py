@@ -15,6 +15,7 @@ def test_load_settings_merges_defaults_and_handles_missing_or_corrupt_file():
         "model": config.PROVIDER_DEFAULT_MODELS[config.PROVIDER],
         "buy_rules": config.BUY_RULES,
         "sell_rules": config.SELL_RULES,
+        "temperature": None,
     }
 
     path = Path(settings.settings_path())
@@ -27,6 +28,7 @@ def test_load_settings_merges_defaults_and_handles_missing_or_corrupt_file():
     assert loaded["model"] == config.PROVIDER_DEFAULT_MODELS["openai"]
     assert loaded["buy_rules"] == config.BUY_RULES
     assert loaded["sell_rules"] == config.SELL_RULES
+    assert loaded["temperature"] is None
 
     path.write_text("{not json", encoding="utf-8")
 
@@ -39,6 +41,7 @@ def test_save_settings_round_trip_and_keeps_keys_out_of_json():
         "model": "ignored-model",
         "buy_rules": "buy from ui",
         "sell_rules": "sell from ui",
+        "temperature": "0.0",
         "FMP_API_KEY": "must-not-be-saved",
     })
 
@@ -47,9 +50,22 @@ def test_save_settings_round_trip_and_keeps_keys_out_of_json():
         "model": config.PROVIDER_DEFAULT_MODELS["groq"],
         "buy_rules": "buy from ui",
         "sell_rules": "sell from ui",
+        "temperature": 0.0,
     }
     raw = json.loads(Path(settings.settings_path()).read_text(encoding="utf-8"))
     assert "FMP_API_KEY" not in raw
+    assert raw["temperature"] == "0.0"
+
+
+def test_load_settings_falls_back_to_provider_default_for_bad_temperature():
+    path = Path(settings.settings_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '{"provider":"anthropic","buy_rules":"buy","sell_rules":"sell","temperature":"low"}',
+        encoding="utf-8",
+    )
+
+    assert settings.load_settings()["temperature"] is None
 
 
 def test_save_settings_ignores_blocked_legacy_tmp_filename():
