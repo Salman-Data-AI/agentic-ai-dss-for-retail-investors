@@ -605,16 +605,6 @@ if selected_view == "Latest Run":
         if latest_model:
             latest_caption += f" · `{latest_model}`"
         st.caption(latest_caption)
-        if latest_run_summary.get("ticker_timings"):
-            slowest = max(
-                latest_run_summary["ticker_timings"],
-                key=lambda row: row.get("elapsed_seconds", 0),
-            )
-            st.caption(
-                f"Slowest ticker: `{slowest.get('ticker')}` "
-                f"({slowest.get('elapsed_seconds', 0):.1f}s)"
-            )
-
         buy_signals, sell_signals = split_signal_groups(signals)
 
         col_buy, col_sell = st.columns(2)
