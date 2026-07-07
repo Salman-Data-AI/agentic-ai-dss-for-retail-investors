@@ -434,6 +434,11 @@ def _flatten_metrics(fetched_data: dict) -> dict:
     week_52_high = quote.get("week_52_high")
     if _is_number(price) and _is_number(week_52_high) and week_52_high:
         metrics["price_below_52_week_high_pct"] = round(((week_52_high - price) / week_52_high) * 100, 4)
+    profile = fetched_data.get("get_profile") if isinstance(fetched_data.get("get_profile"), dict) else {}
+    volume = quote.get("volume")
+    average_volume = profile.get("average_volume")
+    if _is_number(volume) and _is_number(average_volume) and average_volume:
+        metrics["volume_vs_average_pct"] = round(((volume - average_volume) / average_volume) * 100, 4)
     _add_metric_aliases(metrics)
     return metrics
 

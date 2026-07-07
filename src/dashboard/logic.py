@@ -80,9 +80,98 @@ def build_history_rows(results: list[dict]) -> list[dict]:
     return rows
 
 
+def build_rule_clause_rows(rule_set: dict | None, clause_key: str) -> list[dict]:
+    """Build Streamlit-friendly rows for compiled rule clauses."""
+    if not isinstance(rule_set, dict):
+        return []
+    clauses = rule_set.get(clause_key)
+    if not isinstance(clauses, list):
+        return []
+
+    rows = []
+    for index, clause in enumerate(clauses, start=1):
+        if not isinstance(clause, dict):
+            continue
+        operator = clause.get("operator", "")
+        threshold = clause.get("threshold", "")
+        rows.append({
+            "#": index,
+            "User phrase": clause.get("user_phrase", ""),
+            "Bound metric": clause.get("bound_metric", ""),
+            "Enforced check": f"{operator} {threshold}".strip(),
+        })
+    return rows
+
+
+def describe_rule_gate(settings: dict, active_fingerprint: str) -> dict:
+    """Return the current dashboard approval/gate state for edited rule text."""
+    saved_fingerprint = settings.get("compiled_rule_fingerprint") or ""
+    saved_rule_set = settings.get("compiled_rule_set")
+    persisted_state = settings.get("rule_approval_state") or "unvalidated"
+    is_current = saved_fingerprint == active_fingerprint and isinstance(saved_rule_set, dict)
+    is_approved = is_current and persisted_state == "approved"
+    is_compiled = is_current and persisted_state == "compiled"
+
+    if is_approved:
+        message = "Validated and approved - ready to run."
+        state = "approved"
+    elif is_compiled:
+        message = "Validated - review thresholds and approve before running."
+        state = "compiled"
+    elif saved_fingerprint and saved_fingerprint != active_fingerprint:
+        message = "Rules changed - validate before running."
+        state = "stale"
+    elif persisted_state == "invalidated":
+        message = "Validation failed - fix the highlighted rule clauses and validate again."
+        state = "invalidated"
+    else:
+        message = "Rules are unvalidated - validate before running."
+        state = "unvalidated"
+
+    return {
+        "state": state,
+        "message": message,
+        "run_enabled": is_approved,
+        "approval_enabled": is_compiled,
+        "current_rule_set": saved_rule_set if is_current else None,
+    }
+
+
 def escape_markdown_math(text: str) -> str:
     """Escape dollar signs so Streamlit does not render prices as LaTeX."""
     return text.replace("$", r"\$")
+
+
+def format_metric_value(value) -> str:
+    """Render a data-used value compactly so metric cards don't truncate.
+
+    Floats are rounded to two decimals with trailing zeros trimmed; bools,
+    ints, and other types fall back to their plain string form.
+    """
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        rounded = round(value, 2)
+        text = f"{rounded:.2f}".rstrip("0").rstrip(".")
+        return text or "0"
+    return str(value)
+
+
+def chunk_metrics(data: dict, per_row: int = 4) -> list[list[tuple[str, str]]]:
+    """Group data-used items into rows of at most ``per_row`` metric cards.
+
+    Each item becomes a ``(label, formatted_value)`` pair. Wrapping keeps
+    columns wide enough that labels and values stay readable.
+    """
+    if per_row < 1:
+        raise ValueError("per_row must be at least 1")
+    items = [
+        (key.replace("_", " ").title(), format_metric_value(value))
+        for key, value in data.items()
+    ]
+    return [items[i:i + per_row] for i in range(0, len(items), per_row)]
 
 
 def _format_duration(seconds) -> str:

@@ -213,7 +213,7 @@ def run_analysis() -> dict:
         _write_run_summary(summary)
         print("\n-- Rule approval gate -------------------------------------------")
         print(f"  BLOCKED: {summary['block_message']}")
-        print("  Temporary approval: python src/approve_rules.py approve")
+        print("  Open the dashboard Settings view to validate, approve, and run.")
         return summary
     compiled_rule_set = rule_state["rule_set"]
 
@@ -225,7 +225,7 @@ def run_analysis() -> dict:
     print("\n-- BUY evaluation (watchlist) ----------------------------------")
     print(f"  plan: {_format_plan(buy_plan)}")
     if buy_plan_diagnostics.fallback_only:
-        print("  WARNING: BUY rules matched no specific data tools; using quote fallback only. TODO: surface this warning in the dashboard.")
+        print("  WARNING: BUY rules matched no specific data tools; using quote fallback only.")
     for ticker in _load_watchlist():
         jobs.append({
             "index": len(jobs),
@@ -245,7 +245,7 @@ def run_analysis() -> dict:
     print("\n-- SELL evaluation (portfolio) ---------------------------------")
     print(f"  plan: {_format_plan(sell_plan)}")
     if sell_plan_diagnostics.fallback_only:
-        print("  WARNING: SELL rules matched no specific data tools; using quote fallback only. TODO: surface this warning in the dashboard.")
+        print("  WARNING: SELL rules matched no specific data tools; using quote fallback only.")
     for holding in _load_portfolio():
         ticker = holding["ticker"]
         jobs.append({

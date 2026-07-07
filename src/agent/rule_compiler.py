@@ -202,6 +202,10 @@ def _bind_common_clause(phrase: str, *, side: str) -> dict[str, Any] | None:
     normalized = phrase.lower()
     number = _comparison_number(normalized)
 
+    special_clause = _bind_special_reference_clause(phrase, normalized)
+    if special_clause is not None:
+        return special_clause
+
     if ("rsi" in normalized or "relative strength index" in normalized) and number is not None:
         operator = _operator_from_text(normalized)
         if operator:
@@ -231,8 +235,125 @@ def _bind_common_clause(phrase: str, *, side: str) -> dict[str, Any] | None:
     return None
 
 
+def _bind_special_reference_clause(phrase: str, normalized: str) -> dict[str, Any] | None:
+    number = _comparison_number(normalized)
+
+    if "volume" in normalized and "average" in normalized:
+        if any(token in normalized for token in ("above", "greater than", "more than", "over", ">")):
+            return _clause(phrase, "volume_vs_average_pct", ">", number if number is not None else 0)
+        if any(token in normalized for token in ("below", "less than", "under", "<")):
+            threshold = -(number if number is not None else 0)
+            return _clause(phrase, "volume_vs_average_pct", "<", threshold)
+
+    if "dropped" in normalized and "today" in normalized and number is not None:
+        return _clause(phrase, "change_pct", "<", -abs(number))
+
+    if "52" in normalized and "price" in normalized:
+        return None
+    if "entry price" in normalized and "current price" in normalized:
+        return None
+
+    if "positive" in normalized:
+        for token, metric_key in (
+            ("net income", "net_income"),
+            ("operating cash flow", "operating_cash_flow"),
+            ("buyback", "common_stock_repurchased"),
+            ("buybacks", "common_stock_repurchased"),
+        ):
+            if token in normalized:
+                return _clause(phrase, metric_key, ">", 0)
+
+    metric_key = _metric_key_from_text(normalized)
+    if metric_key is None:
+        return None
+
+    if "negative" in normalized:
+        return _clause(phrase, metric_key, "<", 0)
+    if "positive" in normalized:
+        return _clause(phrase, metric_key, ">", 0)
+
+    if number is None:
+        return None
+
+    operator = _operator_from_text(normalized)
+    if operator:
+        return _clause(phrase, metric_key, operator, number)
+    return None
+
+
+def _metric_key_from_text(text: str) -> str | None:
+    bindings = (
+        (("sma", "simple moving average"), "sma"),
+        (("ema", "exponential moving average"), "ema"),
+        (("adx",), "adx"),
+        (("williams",), "williams"),
+        (("standard deviation",), "standard_deviation"),
+        (("current price", "price"), "price"),
+        (("market cap", "market capitalization", "large-cap", "large cap"), "market_cap"),
+        (("p/b", "price to book", "price-to-book"), "price_to_book_ttm"),
+        (("p/s", "price to sales", "price-to-sales"), "price_to_sales_ttm"),
+        (("peg",), "peg_ratio_ttm"),
+        (("debt-to-equity", "debt to equity"), "debt_to_equity_ttm"),
+        (("current ratio",), "current_ratio_ttm"),
+        (("quick ratio",), "quick_ratio_ttm"),
+        (("interest coverage",), "interest_coverage_ttm"),
+        (("gross margin",), "gross_profit_margin_ttm"),
+        (("operating margin",), "operating_profit_margin_ttm"),
+        (("net margin",), "net_profit_margin_ttm"),
+        (("roe", "return on equity"), "return_on_equity_ttm"),
+        (("roa", "return on assets"), "return_on_assets_ttm"),
+        (("roic", "return on invested capital"), "return_on_invested_capital_ttm"),
+        (("ev/ebitda",), "ev_to_ebitda_ttm"),
+        (("fcf yield", "free cash flow yield"), "free_cash_flow_yield_ttm"),
+        (("earnings yield",), "earnings_yield_ttm"),
+        (("net debt/ebitda", "net debt to ebitda"), "net_debt_to_ebitda_ttm"),
+        (("graham",), "graham_number_ttm"),
+        (("annual revenue", "revenue"), "revenue"),
+        (("ebitda",), "ebitda"),
+        (("operating income",), "operating_income"),
+        (("net income",), "net_income"),
+        (("cash and short-term investments", "cash and short term investments"), "cash_and_short_term_investments"),
+        (("operating cash flow",), "operating_cash_flow"),
+        (("capex", "capital expenditure"), "capital_expenditures"),
+        (("beta",), "beta"),
+        (("average volume",), "average_volume"),
+        (("last dividend", "dividend"), "last_dividend"),
+        (("consensus target",), "target_consensus"),
+        (("median target",), "target_median"),
+        (("analyst score", "overall score"), "overall_score"),
+        (("forecast eps", "expected eps"), "eps_avg"),
+        (("forecast revenue", "expected revenue"), "revenue_avg"),
+    )
+    for tokens, metric_key in bindings:
+        if any(token in text for token in tokens):
+            return metric_key
+
+    return _return_metric_key_from_text(text)
+
+
+def _return_metric_key_from_text(text: str) -> str | None:
+    horizons = (
+        ("1d", "return_1d"),
+        ("5d", "return_5d"),
+        ("1m", "return_1m"),
+        ("3m", "return_3m"),
+        ("6m", "return_6m"),
+        ("ytd", "return_ytd"),
+        ("year-to-date", "return_ytd"),
+        ("1y", "return_1y"),
+        ("3y", "return_3y"),
+        ("5y", "return_5y"),
+    )
+    if "return" not in text and "up more than" not in text:
+        return None
+    for token, metric_key in horizons:
+        if token in text:
+            return metric_key
+    return None
+
+
 def _mentions_pe_ratio(text: str) -> bool:
-    return any(token in text for token in ("pe ratio", "p/e", "price to earnings", "price-to-earnings"))
+    return any(token in text for token in ("pe ratio", "p/e", "price to earnings", "price-to-earnings")) or bool(re.search(r"\bpe\b", text))
 
 
 def _mentions_positive_eps(text: str) -> bool:
@@ -242,29 +363,43 @@ def _mentions_positive_eps(text: str) -> bool:
 
 
 def _operator_from_text(text: str) -> str | None:
-    if any(token in text for token in ("below", "less than", "under", "<")):
+    if any(token in text for token in ("below", "less than", "under", "dropped more than", "<")):
         return "<"
-    if any(token in text for token in ("above", "greater than", "more than", "over", "expanded above", ">")):
+    if any(token in text for token in ("above", "greater than", "more than", "over", "expanded above", "up more than", ">")):
         return ">"
     return None
 
 
 def _first_number(text: str) -> float | None:
-    match = re.search(r"(\d+(?:\.\d+)?)", text)
+    match = re.search(r"(-?\d+(?:\.\d+)?)\s*(billion|million|trillion|%)?", text)
     if not match:
         return None
     value = float(match.group(1))
+    unit = match.group(2)
+    if unit == "million":
+        value *= 1_000_000
+    elif unit == "billion":
+        value *= 1_000_000_000
+    elif unit == "trillion":
+        value *= 1_000_000_000_000
     return int(value) if value.is_integer() else value
 
 
 def _comparison_number(text: str) -> float | None:
     for pattern in (
-        r"(?:below|less than|under|above|greater than|more than|over|expanded above|within)\D+(\d+(?:\.\d+)?)",
-        r"(?:<|>)\s*(\d+(?:\.\d+)?)",
+        r"(?:below|less than|under|above|greater than|more than|over|expanded above|within|up more than|dropped more than)[^\d-]+(-?\d+(?:\.\d+)?)\s*(billion|million|trillion|%)?",
+        r"(?:<|>)\s*(-?\d+(?:\.\d+)?)\s*(billion|million|trillion|%)?",
     ):
         match = re.search(pattern, text)
         if match:
             value = float(match.group(1))
+            unit = match.group(2)
+            if unit == "million":
+                value *= 1_000_000
+            elif unit == "billion":
+                value *= 1_000_000_000
+            elif unit == "trillion":
+                value *= 1_000_000_000_000
             return int(value) if value.is_integer() else value
     return _first_number(text)
 
@@ -342,7 +477,15 @@ def _validate_rule_sources(rule_set: dict[str, Any], *, buy_rules: str, sell_rul
                     "message": f"{metric_key} is not valid for {evaluation_type}.",
                 })
             produced_by = set(metric["produced_by"]) - {"holding"}
-            if produced_by and not produced_by.intersection(planned_tools):
+            if metric.get("requires_all_sources") and not produced_by.issubset(planned_tools):
+                problems.append({
+                    "path": f"{list_key}[{index}].bound_metric",
+                    "message": (
+                        f"{metric_key} requires all of {sorted(produced_by)}, "
+                        f"but planned tools are {sorted(planned_tools)}."
+                    ),
+                })
+            elif produced_by and not produced_by.intersection(planned_tools):
                 problems.append({
                     "path": f"{list_key}[{index}].bound_metric",
                     "message": (

@@ -59,7 +59,7 @@ Responsibilities:
 - Read `src/data/portfolio.csv` for SELL evaluations.
 - Prepare the compiled rule set before fetching data; unapproved, invalidated, or unbindable rules block the run with a structured summary.
 - Plan the required BUY and SELL tools once per run.
-- Print a console warning if a rule set maps only to the quote fallback.
+- Surface fail-closed compile blocks in the dashboard when a clause cannot bind to a supported metric.
 - Fetch the planned metrics for each ticker.
 - Fetch ticker data in parallel using a small worker pool.
 - Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group, passing the approved compiled rule set.
@@ -97,14 +97,7 @@ Compile is fail-closed. If any clause cannot be bound to one supported numeric m
 
 `src/settings.py` persists `compiled_rule_set`, `compiled_rule_fingerprint`, and `rule_approval_state`. Legacy `settings.json` files load as `unvalidated`, which forces compile and approval before the next analysis can run. The approval states are `unvalidated`, `compiled`, `approved`, and `invalidated`. Raw BUY/SELL rule text edits take precedence over a stale approval lock because a changed fingerprint invalidates the old lock and forces recompile plus re-approval.
 
-Until the Chunk 3 dashboard UI exists, `src/approve_rules.py` is the temporary non-UI trigger:
-
-```powershell
-python src/approve_rules.py compile
-python src/approve_rules.py approve
-```
-
-`approve` compiles first if needed, then marks the current compiled rule set as approved.
+The dashboard Settings view is the approval surface. **Validate Metrics** calls the shared compile/state-machine path, shows each user phrase with the bound metric plus operator and threshold, and persists the rule set as `compiled`. **Approve Rule Set** calls the shared approval path and marks the current fingerprint as `approved`. If any clause is unbound, the dashboard renders the blocking message near the rule editor, names the clause, and points the user to the Metrics Reference view.
 
 Automated tests mock provider clients for compile, state-machine, gate, and deterministic-signal checks so the suite is deterministic and does not spend real LLM calls. Real-provider structured-output smoke tests are intentionally kept outside the default offline suite because they require live credentials, network access, and provider-specific account availability.
 
@@ -228,14 +221,14 @@ The dashboard is a Streamlit interface for running and reviewing analyses.
 Responsibilities:
 
 - Display the selected provider and model.
-- Provide a `Run Analysis` button.
-- Call `run_analysis()` in process.
+- Provide `Validate Metrics` and `Approve Rule Set` controls in Settings, plus a dashboard-level gated `Run Analysis` control.
+- Call `run_analysis()` in process only after the current compiled rule set is approved.
 - Read the latest signals from SQLite.
 - Split results into watchlist BUY evaluations and portfolio SELL evaluations.
 - Normalize legacy stored signal labels for display.
 - Render each result as a card with signal, rationale, and underlying data.
 - Render a static Metrics Reference tab from hardcoded reference rows and a one-time AAPL FMP snapshot.
-- Provide a Settings tab for provider/rule/API-key/CSV editing.
+- Provide a Settings tab for provider/rule/API-key/CSV editing, rule validation, locked-rule review, and approval.
 
 The dashboard uses progressive disclosure:
 
@@ -282,7 +275,22 @@ src/database/signals.db
 ### Dashboard Flow
 
 ```text
-User clicks Run Analysis
+User edits rules in Settings
+      |
+      v
+Validate Metrics compiles and persists the current fingerprint
+      |
+      v
+Dashboard shows user phrase -> bound metric -> operator/threshold
+      |
+      v
+User approves the compiled rule set
+      |
+      v
+Run Analysis becomes available
+      |
+      v
+User clicks dashboard-level Run Analysis
       |
       v
 Streamlit calls run_analysis() in process

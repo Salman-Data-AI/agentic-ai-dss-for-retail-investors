@@ -37,3 +37,10 @@ def test_plan_tools_with_diagnostics_default_buy_rules_are_specific():
         PlannedTool("get_rsi", {"period": 14}),
         PlannedTool("get_key_metrics"),
     ]
+
+
+def test_plan_tools_for_volume_above_average_fetches_quote_and_profile():
+    assert plan_tools_for_rules("Volume should be above average") == [
+        PlannedTool("get_quote"),
+        PlannedTool("get_profile"),
+    ]

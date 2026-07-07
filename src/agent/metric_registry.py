@@ -56,6 +56,17 @@ METRIC_REGISTRY: dict[str, dict[str, Any]] = {
         "aliases": ("volume", "shares traded"),
         "examples": ("volume above 1000000 -> volume > 1000000",),
     },
+    "volume_vs_average_pct": {
+        "label": "Volume versus average volume",
+        "kind": "derived",
+        "evaluation_types": ("BUY_EVAL", "SELL_EVAL"),
+        "produced_by": ("get_quote", "get_profile"),
+        "requires_all_sources": True,
+        "source_fields": ("get_quote.volume", "get_profile.average_volume"),
+        "unit": "percent",
+        "aliases": ("volume above average", "volume below average", "relative volume"),
+        "examples": ("volume above average -> volume_vs_average_pct > 0",),
+    },
     "market_cap": {
         "label": "Market cap",
         "kind": "tool",

@@ -17,10 +17,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
 from main import read_latest_run_summary, run_analysis
-from dashboard.logic import build_history_rows, escape_markdown_math, split_signal_groups
+from dashboard.logic import (
+    build_history_rows,
+    build_rule_clause_rows,
+    chunk_metrics,
+    describe_rule_gate,
+    escape_markdown_math,
+    split_signal_groups,
+)
+from agent.rule_approval import approve_current_rule_set, compile_current_settings
+from agent.rule_compiler import current_rule_fingerprint
 from agent.tools import get_fmp_request_count
 from settings import (
     PORTFOLIO_COLUMNS,
+    RULE_APPROVAL_UNVALIDATED,
     WATCHLIST_COLUMNS,
     clean_portfolio_frame,
     clean_watchlist_frame,
@@ -54,7 +64,7 @@ _METRIC_REFERENCE = [
         "metric": "SMA",
         "source_tool": "get_sma",
         "measures": "Simple moving average of price for trend context.",
-        "rule_phrasing": '"price above its 50-day SMA"',
+        "rule_phrasing": '"SMA above 250"',
         "interpretation": "Price above the SMA can indicate an uptrend context.",
         "snapshot_value": "AAPL snapshot: SMA 293.52 vs price 308.63",
     },
@@ -63,7 +73,7 @@ _METRIC_REFERENCE = [
         "metric": "EMA",
         "source_tool": "get_technical_indicator",
         "measures": "Exponential moving average that weights recent prices more heavily.",
-        "rule_phrasing": '"price above its 20-day EMA"',
+        "rule_phrasing": '"EMA above 250"',
         "interpretation": "Reacts faster than SMA to recent moves.",
         "snapshot_value": "AAPL snapshot: EMA 294.42 as of 2026-07-02",
     },
@@ -90,7 +100,7 @@ _METRIC_REFERENCE = [
         "metric": "Standard deviation",
         "source_tool": "get_technical_indicator",
         "measures": "Price volatility over the selected lookback period.",
-        "rule_phrasing": '"standard deviation is elevated"',
+        "rule_phrasing": '"standard deviation above 8"',
         "interpretation": "Higher values suggest more volatile price movement.",
         "snapshot_value": "AAPL snapshot: 7.99 as of 2026-07-02",
     },
@@ -99,7 +109,7 @@ _METRIC_REFERENCE = [
         "metric": "Current price",
         "source_tool": "get_quote",
         "measures": "Latest quoted stock price.",
-        "rule_phrasing": '"price near the 52-week low"',
+        "rule_phrasing": '"price above 250"',
         "interpretation": "Useful for price-level and distance-from-range rules.",
         "snapshot_value": "AAPL snapshot: 308.63",
     },
@@ -126,18 +136,18 @@ _METRIC_REFERENCE = [
         "metric": "52-week low",
         "source_tool": "get_quote",
         "measures": "Lowest price in the past year.",
-        "rule_phrasing": '"price near its 52-week low"',
+        "rule_phrasing": '"price within 5% above the 52-week low"',
         "interpretation": "Useful for value, drawdown, or mean-reversion rules.",
         "snapshot_value": "AAPL snapshot: 201.50",
     },
     {
         "category": "Price & quote",
         "metric": "Volume",
-        "source_tool": "get_quote",
+        "source_tool": "get_quote / get_profile",
         "measures": "Shares traded.",
         "rule_phrasing": '"volume above average"',
-        "interpretation": "Can indicate trading activity or liquidity.",
-        "snapshot_value": "AAPL snapshot: 71,897,697",
+        "interpretation": "Compares current volume with average volume; above average means the relative-volume percentage is greater than 0.",
+        "snapshot_value": "AAPL snapshot: 71,897,697 vs average 53,938,116",
     },
     {
         "category": "Price & quote",
@@ -315,7 +325,7 @@ _METRIC_REFERENCE = [
         "metric": "Graham number",
         "source_tool": "get_financial_health",
         "measures": "Value-investing benchmark price.",
-        "rule_phrasing": '"price below the Graham number"',
+        "rule_phrasing": '"Graham number above 30"',
         "interpretation": "Used as a conservative value reference, not a guaranteed fair value.",
         "snapshot_value": "AAPL snapshot: 36.84",
     },
@@ -324,7 +334,7 @@ _METRIC_REFERENCE = [
         "metric": "Revenue, gross profit, EBITDA, operating income, net income, EPS, diluted EPS, fiscal year",
         "source_tool": "get_income_statement",
         "measures": "Latest annual income statement values.",
-        "rule_phrasing": '"annual revenue is growing" / "positive annual net income"',
+        "rule_phrasing": '"annual revenue above 400 billion" / "positive annual net income"',
         "interpretation": "Annual fundamentals only; quarterly fundamentals are intentionally unsupported.",
         "snapshot_value": "AAPL snapshot: FY 2025; revenue 416.16B; net income 112.01B; EPS 7.49",
     },
@@ -333,7 +343,7 @@ _METRIC_REFERENCE = [
         "metric": "Total assets, current assets, current liabilities, long-term debt, short-term debt, cash and short-term investments, inventory",
         "source_tool": "get_balance_sheet",
         "measures": "Latest annual balance sheet values.",
-        "rule_phrasing": '"cash is greater than short-term debt"',
+        "rule_phrasing": '"cash and short-term investments above 50 billion"',
         "interpretation": "Annual fundamentals only; quarterly fundamentals are intentionally unsupported.",
         "snapshot_value": "AAPL snapshot: assets 359.24B; current liabilities 165.63B; cash/ST investments 54.70B",
     },
@@ -342,7 +352,7 @@ _METRIC_REFERENCE = [
         "metric": "Operating cash flow, capex, dividends, buybacks, net change in cash",
         "source_tool": "get_cash_flow",
         "measures": "Latest annual cash-flow values.",
-        "rule_phrasing": '"positive operating cash flow" / "buybacks are positive"',
+        "rule_phrasing": '"positive operating cash flow" / "capex below 15 billion"',
         "interpretation": "Annual fundamentals only; quarterly fundamentals are intentionally unsupported.",
         "snapshot_value": "AAPL snapshot: operating cash flow 111.48B; capex -12.72B; buybacks -90.71B",
     },
@@ -369,7 +379,7 @@ _METRIC_REFERENCE = [
         "metric": "Sector / industry",
         "source_tool": "get_profile",
         "measures": "Company classification.",
-        "rule_phrasing": '"only technology-sector stocks"',
+        "rule_phrasing": "(context only)",
         "interpretation": "Useful for inclusion or exclusion filters.",
         "snapshot_value": "AAPL snapshot: Technology / Consumer Electronics",
     },
@@ -387,7 +397,7 @@ _METRIC_REFERENCE = [
         "metric": "Market cap",
         "source_tool": "get_profile",
         "measures": "Company size by market value.",
-        "rule_phrasing": '"large-cap only"',
+        "rule_phrasing": '"market cap above 10 billion"',
         "interpretation": "Useful for size filters.",
         "snapshot_value": "AAPL snapshot: 4.53T",
     },
@@ -405,7 +415,7 @@ _METRIC_REFERENCE = [
         "metric": "ETF / fund / ADR flags",
         "source_tool": "get_profile",
         "measures": "Instrument type flags.",
-        "rule_phrasing": '"exclude ETFs"',
+        "rule_phrasing": "(context only)",
         "interpretation": "Useful for filtering instrument types.",
         "snapshot_value": "AAPL snapshot: ETF false; fund false; ADR false",
     },
@@ -423,7 +433,7 @@ _METRIC_REFERENCE = [
         "metric": "Last dividend",
         "source_tool": "get_profile",
         "measures": "Most recent dividend value.",
-        "rule_phrasing": '"pays a dividend"',
+        "rule_phrasing": '"last dividend above 0"',
         "interpretation": "Useful for income-oriented filters.",
         "snapshot_value": "AAPL snapshot: 1.05",
     },
@@ -432,7 +442,7 @@ _METRIC_REFERENCE = [
         "metric": "Price target: high / low / consensus / median",
         "source_tool": "get_price_target",
         "measures": "Analyst price targets.",
-        "rule_phrasing": '"price below the consensus target"',
+        "rule_phrasing": '"consensus target above 300"',
         "interpretation": "Useful for analyst upside/downside context.",
         "snapshot_value": "AAPL snapshot: high 400; low 253; consensus 327; median 325",
     },
@@ -441,7 +451,7 @@ _METRIC_REFERENCE = [
         "metric": "Analyst rating snapshot + component scores",
         "source_tool": "get_analyst_rating",
         "measures": "Aggregate analyst view and related score components.",
-        "rule_phrasing": '"analyst rating is favourable"',
+        "rule_phrasing": '"overall score above 2"',
         "interpretation": "Useful as a supporting view, not a standalone guarantee.",
         "snapshot_value": "AAPL snapshot: rating B; overall score 3",
     },
@@ -450,7 +460,7 @@ _METRIC_REFERENCE = [
         "metric": "Annual revenue / EPS / EBITDA estimates, EPS analyst count",
         "source_tool": "get_analyst_estimates",
         "measures": "Forward annual estimates.",
-        "rule_phrasing": '"forecast EPS growth is positive"',
+        "rule_phrasing": '"forecast EPS above 1"',
         "interpretation": "Useful for forward-looking growth expectations.",
         "snapshot_value": "AAPL snapshot: date 2030-09-27; EPS avg 12.82; revenue avg 662.33B",
     },
@@ -459,7 +469,7 @@ _METRIC_REFERENCE = [
         "metric": "Past and upcoming earnings rows: EPS and revenue estimates/actuals, earnings dates",
         "source_tool": "get_earnings",
         "measures": "Earnings history and schedule.",
-        "rule_phrasing": '"avoid buying within 5 days of earnings"',
+        "rule_phrasing": "(context only)",
         "interpretation": "Useful for event-risk, surprise, and schedule rules.",
         "snapshot_value": "AAPL snapshot: next 2026-07-30 EPS est 1.88; prior 2026-04-30 EPS actual 2.01",
     },
@@ -504,6 +514,93 @@ def _render_metrics_reference() -> None:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+def _render_compiled_rule_set(rule_set: dict | None, *, title: str) -> None:
+    st.markdown(f"#### {title}")
+    if not isinstance(rule_set, dict):
+        st.caption("No current compiled rule set.")
+        return
+
+    for label, clause_key in (("BUY rules", "buy_clauses"), ("SELL rules", "sell_clauses")):
+        rows = build_rule_clause_rows(rule_set, clause_key)
+        with st.expander(label, expanded=True):
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No compiled clauses.")
+
+
+def _render_validation_block(result: dict | None) -> None:
+    if not result or result.get("ok"):
+        return
+
+    if result.get("code") == "unbound_clauses":
+        st.error("Validation blocked: one or more clauses could not be bound to supported metrics.")
+        for clause in result.get("unbound_clauses") or []:
+            side = str(clause.get("side", "rule")).upper()
+            phrase = clause.get("user_phrase", "")
+            reason = clause.get("reason", "No supported metric matched this wording.")
+            st.markdown(f"- **{side}** `{phrase}`: {reason}")
+        st.caption(
+            "Rephrase using a recognised keyword or drop the rule. "
+            "See the Metrics Reference view for supported vocabulary."
+        )
+        return
+
+    validation = result.get("validation") or {}
+    problems = validation.get("problems") if isinstance(validation, dict) else None
+    st.error(result.get("message") or "Validation blocked.")
+    if problems:
+        for problem in problems:
+            st.markdown(f"- `{problem.get('path', '$')}`: {problem.get('message', '')}")
+    st.caption("Review the rule wording and the Metrics Reference view, then validate again.")
+
+
+def _save_rule_editor_settings(
+    *,
+    selected_provider: str,
+    model: str,
+    buy_rules: str,
+    sell_rules: str,
+    temperature: str,
+    current: dict,
+) -> None:
+    next_values = {
+        "provider": selected_provider,
+        "model": model,
+        "buy_rules": buy_rules,
+        "sell_rules": sell_rules,
+        "temperature": temperature.strip() or None,
+    }
+    if buy_rules != current["buy_rules"] or sell_rules != current["sell_rules"]:
+        next_values.update({
+            "compiled_rule_set": None,
+            "compiled_rule_fingerprint": "",
+            "rule_approval_state": RULE_APPROVAL_UNVALIDATED,
+        })
+    save_settings(next_values)
+
+
+def _run_analysis_button(*, enabled: bool, use_container_width: bool = False) -> None:
+    if st.button(
+        "Run Analysis",
+        type="primary",
+        disabled=not enabled,
+        use_container_width=use_container_width,
+    ):
+        with st.spinner("Agent evaluating your stocks - this takes ~10-20 seconds..."):
+            try:
+                result = run_analysis()
+            except Exception as exc:
+                st.error("Agent run failed.")
+                st.code(str(exc), language="text")
+            else:
+                if result.get("blocked"):
+                    st.warning("Analysis blocked before fetching market data.")
+                else:
+                    st.success("Analysis complete.")
+                st.rerun()
+
+
 # ----------------------------------------------------------- card renderer
 def _render_card(s: dict) -> None:
     _SIGNAL_COLORS = {
@@ -541,12 +638,10 @@ def _render_card(s: dict) -> None:
                 if has_nested_values:
                     st.json(data)
                 else:
-                    cols = st.columns(len(data))
-                    for col, (k, v) in zip(cols, data.items()):
-                        col.metric(
-                            label=k.replace("_", " ").title(),
-                            value=str(v) if v is not None else "-",
-                        )
+                    for row in chunk_metrics(data, per_row=4):
+                        cols = st.columns(len(row))
+                        for col, (label, value) in zip(cols, row):
+                            col.metric(label=label, value=value)
 
 
 # ------------------------------------------------------------------ page setup
@@ -562,7 +657,12 @@ st.caption(f"Provider: `{current_settings['provider']}` · Model: `{current_sett
 st.metric("FMP requests today", get_fmp_request_count())
 latest_run_summary = read_latest_run_summary()
 latest_run_is_blocked = bool(latest_run_summary.get("blocked"))
-rules_are_approved = current_settings.get("rule_approval_state") == "approved"
+settings_fingerprint = current_rule_fingerprint(
+    current_settings["buy_rules"],
+    current_settings["sell_rules"],
+)
+header_gate = describe_rule_gate(current_settings, settings_fingerprint)
+rules_are_approved = header_gate["run_enabled"]
 active_blocked_summary = latest_run_is_blocked and not rules_are_approved
 if latest_run_summary:
     if active_blocked_summary:
@@ -571,8 +671,8 @@ if latest_run_summary:
             f"{latest_run_summary.get('block_message') or 'Rule approval is required.'}"
         )
         st.caption(
-            "Approve the current compiled rules with "
-            "`python src/approve_rules.py approve`, then run analysis again."
+            "Open Settings, validate the current rules, review the thresholds, "
+            "approve the locked rule set, then run analysis again."
         )
     elif latest_run_is_blocked and rules_are_approved:
         st.success("Rules are approved. Click Run Analysis to create a fresh signal run.")
@@ -585,19 +685,13 @@ if latest_run_summary:
             f"{latest_run_summary.get('max_workers', 0)} workers"
         )
 
-if st.button("Run Analysis", type="primary"):
-    with st.spinner("Agent evaluating your stocks — this takes ~10-20 seconds..."):
-        try:
-            result = run_analysis()
-        except Exception as exc:
-            st.error("Agent run failed.")
-            st.code(str(exc), language="text")
-        else:
-            if result.get("blocked"):
-                st.warning("Analysis blocked before fetching market data.")
-            else:
-                st.success("Analysis complete.")
-            st.rerun()
+col_run, col_status = st.columns([1, 3])
+with col_run:
+    _run_analysis_button(enabled=header_gate["run_enabled"], use_container_width=True)
+with col_status:
+    st.caption(header_gate["message"])
+    if not header_gate["run_enabled"]:
+        st.caption("Use Settings to validate and approve the current rule set before running analysis.")
 
 st.divider()
 
@@ -615,12 +709,12 @@ if selected_view == "Latest Run":
     signals = read_latest_signals()
 
     if not signals:
-        st.info("No signals yet. Click **Run Analysis** to evaluate your stocks.")
+        st.info("No signals yet. Validate and approve your rules in **Settings**, then click **Run Analysis** above.")
     else:
         if active_blocked_summary:
             st.info("Showing the last successful saved signal run below; the most recent run attempt was blocked.")
         elif latest_run_is_blocked and rules_are_approved:
-            st.info("Showing the previous successful saved signal run below. Rules are now approved; run analysis to refresh these cards.")
+            st.info("Showing the previous successful saved signal run below. Rules are now approved; click Run Analysis above to refresh these cards.")
         latest_provider = signals[0].get("provider") or "unknown"
         latest_model = signals[0].get("model")
         latest_caption = f"Last run: {signals[0]['run_date']} · via `{latest_provider}`"
@@ -760,6 +854,76 @@ if selected_view == "Settings":
 
     buy_rules = st.text_area("Buy rules", value=settings["buy_rules"], height=180)
     sell_rules = st.text_area("Sell rules", value=settings["sell_rules"], height=220)
+    active_fingerprint = current_rule_fingerprint(buy_rules, sell_rules)
+    gate = describe_rule_gate(settings, active_fingerprint)
+
+    st.markdown("#### Rule validation")
+    st.caption(gate["message"])
+    if gate["run_enabled"]:
+        st.success("The approved rule set below is ready for the dashboard-level Run Analysis button.")
+    elif gate["approval_enabled"]:
+        st.info("Review the compiled thresholds below, then approve to unlock the dashboard-level Run Analysis button.")
+    else:
+        st.warning("Run Analysis remains locked until the current rules are validated and approved.")
+
+    col_validate, col_approve = st.columns(2)
+    with col_validate:
+        if st.button("Validate Metrics", type="secondary", use_container_width=True):
+            try:
+                _save_rule_editor_settings(
+                    selected_provider=selected_provider,
+                    model=model,
+                    buy_rules=buy_rules,
+                    sell_rules=sell_rules,
+                    temperature=temperature,
+                    current=settings,
+                )
+                if fmp_api_key.strip() or provider_api_key.strip():
+                    save_api_keys(
+                        provider=selected_provider,
+                        fmp_api_key=fmp_api_key.strip() or None,
+                        provider_api_key=provider_api_key.strip() or None,
+                    )
+                result = compile_current_settings()
+            except (OSError, ValueError) as exc:
+                result = {"ok": False, "message": str(exc)}
+            st.session_state["rule_validation_result"] = result
+            if result.get("ok") or result.get("code") == "approval_required":
+                st.success("Validation complete. Review the thresholds before approving.")
+            else:
+                st.warning("Validation blocked.")
+            settings = load_settings()
+            gate = describe_rule_gate(settings, current_rule_fingerprint(settings["buy_rules"], settings["sell_rules"]))
+
+    validation_result = st.session_state.get("rule_validation_result")
+    if (
+        validation_result
+        and validation_result.get("fingerprint")
+        and validation_result["fingerprint"] != active_fingerprint
+    ):
+        validation_result = None
+        st.session_state.pop("rule_validation_result", None)
+    _render_validation_block(validation_result)
+    _render_compiled_rule_set(
+        gate["current_rule_set"] or (validation_result or {}).get("rule_set"),
+        title="Compiled rule-set review",
+    )
+
+    with col_approve:
+        if st.button(
+            "Approve Rule Set",
+            type="secondary",
+            disabled=not gate["approval_enabled"],
+            use_container_width=True,
+        ):
+            result = approve_current_rule_set()
+            st.session_state["rule_validation_result"] = result
+            if result.get("ok"):
+                st.success("Rule set approved and locked.")
+            else:
+                st.warning(result.get("message") or "Approval blocked.")
+            settings = load_settings()
+            gate = describe_rule_gate(settings, current_rule_fingerprint(settings["buy_rules"], settings["sell_rules"]))
 
     watchlist_path = user_csv_path("watchlist.csv")
     portfolio_path = user_csv_path("portfolio.csv")
@@ -792,13 +956,15 @@ if selected_view == "Settings":
             st.error(message)
         else:
             try:
-                save_settings({
-                    "provider": selected_provider,
-                    "model": model,
-                    "buy_rules": buy_rules,
-                    "sell_rules": sell_rules,
-                    "temperature": temperature.strip() or None,
-                })
+                rules_changed = buy_rules != settings["buy_rules"] or sell_rules != settings["sell_rules"]
+                _save_rule_editor_settings(
+                    selected_provider=selected_provider,
+                    model=model,
+                    buy_rules=buy_rules,
+                    sell_rules=sell_rules,
+                    temperature=temperature,
+                    current=settings,
+                )
                 save_api_keys(
                     provider=selected_provider,
                     fmp_api_key=fmp_api_key.strip() or None,
@@ -810,4 +976,8 @@ if selected_view == "Settings":
                 st.error("Settings could not be saved because the app-data folder is not writable.")
                 st.code(str(exc), language="text")
             else:
-                st.success("Settings saved.")
+                if rules_changed:
+                    st.session_state.pop("rule_validation_result", None)
+                    st.success("Settings saved. Rules changed - validate before running.")
+                else:
+                    st.success("Settings saved.")
