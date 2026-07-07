@@ -32,12 +32,13 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
         fetched.append({"ticker": ticker, "plan": plan})
         return {"get_quote": {"ticker": ticker, "name": f"{ticker} Corp"}}
 
-    def fake_evaluate_batch(items, rules, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
         calls.append({
             "items": items,
             "rules": rules,
             "model": model,
             "evaluation_type": evaluation_type,
+            "compiled_rule_set": compiled_rule_set,
         })
         return [
             {
@@ -58,6 +59,11 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: summaries.append(summary))
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
+        "ok": True,
+        "rule_set": {"buy_clauses": [], "sell_clauses": []},
+        "fingerprint": "fp",
+    })
     monkeypatch.setattr(pipeline, "load_settings", lambda: {
         "provider": "openai",
         "model": "test-model",
@@ -72,6 +78,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert calls[0]["rules"] == "buy rules"
     assert calls[0]["model"] == "test-model"
     assert calls[0]["evaluation_type"] == "BUY_EVAL"
+    assert calls[0]["compiled_rule_set"] == {"buy_clauses": [], "sell_clauses": []}
     assert calls[0]["items"][0]["fetched_data"] == {"get_quote": {"ticker": "AAPL", "name": "AAPL Corp"}}
     assert [item["ticker"] for item in calls[1]["items"]] == ["JPM"]
     assert calls[1]["rules"] == "sell rules"
@@ -128,7 +135,7 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     calls = []
     written = []
 
-    def fake_evaluate_batch(items, rules, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
         calls.append({
             "tickers": [item["ticker"] for item in items],
             "rules": rules,
@@ -154,6 +161,11 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
+        "ok": True,
+        "rule_set": {"buy_clauses": [], "sell_clauses": []},
+        "fingerprint": "fp",
+    })
 
     pipeline.run_analysis()
 
@@ -188,7 +200,7 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     calls = []
     written = []
 
-    def fake_evaluate_batch(items, rules, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
         calls.extend(item["ticker"] for item in items)
         return [
             {
@@ -209,6 +221,11 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
+        "ok": True,
+        "rule_set": {"buy_clauses": [], "sell_clauses": []},
+        "fingerprint": "fp",
+    })
     monkeypatch.setattr(pipeline, "load_settings", lambda: {
         "provider": "openai",
         "model": "test-model",
@@ -221,3 +238,40 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
 
     assert calls == ["AAPL", "MSFT", "JPM", "BAC"]
     assert [record["ticker"] for record in written] == ["AAPL", "MSFT", "JPM", "BAC"]
+
+
+def test_run_analysis_blocks_before_fetch_when_rules_are_not_approved(workspace_tmp_path, monkeypatch):
+    data_dir = workspace_tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "watchlist.csv").write_text("ticker\nAAPL\n", encoding="utf-8")
+    (data_dir / "portfolio.csv").write_text("ticker,qty,entry_price,entry_date\n", encoding="utf-8")
+
+    summaries = []
+    monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
+    monkeypatch.setattr(pipeline, "_execute_tool_plan", lambda ticker, plan: (_ for _ in ()).throw(AssertionError("should not fetch")))
+    monkeypatch.setattr(pipeline, "write_signals", lambda signals: (_ for _ in ()).throw(AssertionError("should not write")))
+    monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: summaries.append(summary))
+    monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
+        "ok": False,
+        "code": "approval_required",
+        "message": "Rule set compiled and must be approved before analysis can run.",
+        "state": "compiled",
+        "fingerprint": "fp",
+    })
+    monkeypatch.setattr(pipeline, "load_settings", lambda: {
+        "provider": "openai",
+        "model": "test-model",
+        "buy_rules": "buy rules",
+        "sell_rules": "sell rules",
+        "temperature": None,
+    })
+
+    result = pipeline.run_analysis()
+
+    assert result["blocked"] is True
+    assert result["block_code"] == "approval_required"
+    assert result["signal_count"] == 0
+    assert summaries == [result]
