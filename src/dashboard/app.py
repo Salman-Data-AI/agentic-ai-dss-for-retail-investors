@@ -561,24 +561,42 @@ current_settings = load_settings()
 st.caption(f"Provider: `{current_settings['provider']}` · Model: `{current_settings['model']}`")
 st.metric("FMP requests today", get_fmp_request_count())
 latest_run_summary = read_latest_run_summary()
+latest_run_is_blocked = bool(latest_run_summary.get("blocked"))
+rules_are_approved = current_settings.get("rule_approval_state") == "approved"
+active_blocked_summary = latest_run_is_blocked and not rules_are_approved
 if latest_run_summary:
-    st.caption(
-        "Latest run timing: "
-        f"{latest_run_summary.get('elapsed_seconds', 0):.1f}s total, "
-        f"{latest_run_summary.get('signal_count', 0)} signals, "
-        f"{latest_run_summary.get('fmp_requests_this_run', 0)} FMP requests, "
-        f"{latest_run_summary.get('max_workers', 0)} workers"
-    )
+    if active_blocked_summary:
+        st.warning(
+            "Latest run was blocked before fetching market data: "
+            f"{latest_run_summary.get('block_message') or 'Rule approval is required.'}"
+        )
+        st.caption(
+            "Approve the current compiled rules with "
+            "`python src/approve_rules.py approve`, then run analysis again."
+        )
+    elif latest_run_is_blocked and rules_are_approved:
+        st.success("Rules are approved. Click Run Analysis to create a fresh signal run.")
+    else:
+        st.caption(
+            "Latest run timing: "
+            f"{latest_run_summary.get('elapsed_seconds', 0):.1f}s total, "
+            f"{latest_run_summary.get('signal_count', 0)} signals, "
+            f"{latest_run_summary.get('fmp_requests_this_run', 0)} FMP requests, "
+            f"{latest_run_summary.get('max_workers', 0)} workers"
+        )
 
 if st.button("Run Analysis", type="primary"):
     with st.spinner("Agent evaluating your stocks — this takes ~10-20 seconds..."):
         try:
-            run_analysis()
+            result = run_analysis()
         except Exception as exc:
             st.error("Agent run failed.")
             st.code(str(exc), language="text")
         else:
-            st.success("Analysis complete.")
+            if result.get("blocked"):
+                st.warning("Analysis blocked before fetching market data.")
+            else:
+                st.success("Analysis complete.")
             st.rerun()
 
 st.divider()
@@ -599,6 +617,10 @@ if selected_view == "Latest Run":
     if not signals:
         st.info("No signals yet. Click **Run Analysis** to evaluate your stocks.")
     else:
+        if active_blocked_summary:
+            st.info("Showing the last successful saved signal run below; the most recent run attempt was blocked.")
+        elif latest_run_is_blocked and rules_are_approved:
+            st.info("Showing the previous successful saved signal run below. Rules are now approved; run analysis to refresh these cards.")
         latest_provider = signals[0].get("provider") or "unknown"
         latest_model = signals[0].get("model")
         latest_caption = f"Last run: {signals[0]['run_date']} · via `{latest_provider}`"

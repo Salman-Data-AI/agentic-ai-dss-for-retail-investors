@@ -2,12 +2,12 @@
 
 ## Overview
 
-Agentic DSS for Retail Investors is a Python-based decision support system that evaluates stocks against investor-defined BUY and SELL rules. It combines deterministic rule-level tool planning with an LLM-powered evaluator that turns prefetched market data into structured signals.
+Agentic DSS for Retail Investors is a Python-based decision support system that evaluates stocks against investor-defined BUY and SELL rules. It combines deterministic rule-level tool planning, an approved compiled rule set, code-owned signal evaluation, and an LLM rationale step over prefetched market data.
 
 The system has four main layers:
 
 - Input and configuration: plain-English investment rules plus CSV watchlist and portfolio files.
-- Agent orchestration: the app plans required tools once per rule set, fetches those metrics for each ticker, and asks the selected LLM to evaluate the prefetched data.
+- Agent orchestration: the app compiles and approves rule text, plans required tools once per rule set, fetches those metrics for each ticker, evaluates signals in code, and asks the selected LLM for rationale text.
 - Market data tools: FMP-backed functions fetch quote, technical, fundamental, profile, performance, analyst, and earnings data.
 - Persistence and presentation: SQLite stores each run, and Streamlit displays the latest results.
 
@@ -17,6 +17,12 @@ The system has four main layers:
 src/
 |-- agent/
 |   |-- agent.py          # Signal evaluation from prefetched market data
+|   |-- deterministic_evaluator.py # Code-owned signal evaluation
+|   |-- rule_approval.py  # Compiled-rule approval state machine
+|   |-- metric_registry.py # Canonical metric contract for compile/runtime
+|   |-- rule_compiler.py  # Hybrid deterministic/LLM compile step for rule text
+|   |-- rule_fingerprint.py # Compile/approval fingerprinting
+|   |-- rule_sets.py      # Pure compiled-rule validation
 |   |-- tool_planner.py   # Rule-level fixed tool planning
 |   |-- tools.py          # Market data and indicator functions
 |   `-- tool_schemas.py   # Tool definitions exposed to Claude
@@ -51,11 +57,12 @@ Responsibilities:
 - Add `src/` to `sys.path` so modules can be imported from either the project root or `src/`.
 - Read `src/data/watchlist.csv` for BUY evaluations.
 - Read `src/data/portfolio.csv` for SELL evaluations.
+- Prepare the compiled rule set before fetching data; unapproved, invalidated, or unbindable rules block the run with a structured summary.
 - Plan the required BUY and SELL tools once per run.
 - Print a console warning if a rule set maps only to the quote fallback.
 - Fetch the planned metrics for each ticker.
 - Fetch ticker data in parallel using a small worker pool.
-- Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group.
+- Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group, passing the approved compiled rule set.
 - Add metadata such as `signal_type`, `run_date`, provider, model, optional temperature, rule text, company name, and entry price.
 - Persist all signals through `write_signals()`.
 
@@ -80,26 +87,45 @@ It defines:
 
 The rules are intentionally written as natural language so the user can change strategy criteria without editing application logic.
 
-### Tool Planning And Evaluation
+### Rule Compile, Approval, And Evaluation
+
+`src/agent/rule_compiler.py` turns the current BUY and SELL rule text into the Chunk 1 compiled rule-set shape validated by `src/agent/rule_sets.py`. The compiler is hybrid: it first applies deterministic pattern bindings for common supported rules such as RSI thresholds, PE thresholds, positive EPS, distance from the 52-week low/high, and entry-price gain/loss. Only clauses that remain ambiguous are sent to the selected provider through `create_llm_client(...)` with no tools exposed. Because the current provider adapters expose text responses rather than a guaranteed native JSON mode for every provider, the LLM fallback contract is prompt-enforced JSON followed by strict parsing and validation.
+
+The closed metric menu is defined in `src/agent/metric_registry.py` and re-exported as `SUPPORTED_METRIC_KEYS` for validation. The registry records canonical metric keys, aliases, valid evaluation types, source tools/fields, units, and examples for the main metrics used by the compiler. `TOOL_SCHEMA_VERSION` and `COMPILE_PROMPT_VERSION` version the metric/prompt contract. The approval fingerprint is computed by `fingerprint_rule_inputs(rule_text, tool_schema_version, prompt_version)`. Provider and model are deliberately excluded because deterministic patterns plus registry-guided fallback are intended to produce provider-independent bindings; if future compile output carries model-specific behavior, this assumption should be revisited.
+
+Compile is fail-closed. If any clause cannot be bound to one supported numeric metric comparison, the compiler returns a structured block with `unbound_clauses` and does not silently drop the clause. `src/main.py::run_analysis()` calls `prepare_rule_set()` before fetch and evaluation. A rule set that is not approved cannot run analysis, so the pipeline blocks before making FMP requests.
+
+`src/settings.py` persists `compiled_rule_set`, `compiled_rule_fingerprint`, and `rule_approval_state`. Legacy `settings.json` files load as `unvalidated`, which forces compile and approval before the next analysis can run. The approval states are `unvalidated`, `compiled`, `approved`, and `invalidated`. Raw BUY/SELL rule text edits take precedence over a stale approval lock because a changed fingerprint invalidates the old lock and forces recompile plus re-approval.
+
+Until the Chunk 3 dashboard UI exists, `src/approve_rules.py` is the temporary non-UI trigger:
+
+```powershell
+python src/approve_rules.py compile
+python src/approve_rules.py approve
+```
+
+`approve` compiles first if needed, then marks the current compiled rule set as approved.
+
+Automated tests mock provider clients for compile, state-machine, gate, and deterministic-signal checks so the suite is deterministic and does not spend real LLM calls. Real-provider structured-output smoke tests are intentionally kept outside the default offline suite because they require live credentials, network access, and provider-specific account availability.
 
 `src/agent/tool_planner.py::plan_tools_for_rules(rules)` converts each rule string into a fixed tool plan for that run. The BUY plan is reused for every watchlist ticker, and the SELL plan is reused for every portfolio holding. `plan_tools_with_diagnostics(rules)` returns the same plan plus a flag for the silent quote-fallback case, so `main.py` can warn when a rule set did not map to any specific data tool.
 
-`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, model, evaluation_type)` is the LLM evaluation function. It evaluates a group of prefetched ticker payloads in one provider call.
+`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, model, evaluation_type, compiled_rule_set=...)` evaluates a group of prefetched ticker payloads in one provider call for rationale only when a compiled rule set is supplied. The deterministic evaluator owns `signal` and `triggering_rule`; the model cannot override them.
 
 The flow:
 
-1. Builds a system prompt containing the investor's rules.
-2. Includes the data already fetched by the fixed tool plan.
-3. Calls the selected provider with no tools exposed.
-4. Parses the final JSON array and maps each item back to its input ticker.
+1. Flattens the fetched market-data payload into numeric metrics, including derived metrics such as `gain_loss_pct`, `price_above_52_week_low_pct`, and `price_below_52_week_high_pct`.
+2. Applies `deterministic_evaluator.evaluate_rule_set()` with the approved compiled rule set.
+3. Calls the selected provider with no tools exposed for rationale text only.
+4. Parses the final JSON array and maps each rationale back to its input ticker.
 
 The batch evaluator is instructed to return one object per ticker with exactly this shape:
 
 ```json
 {
   "ticker": "AAPL",
-  "signal": "BUY | SKIP for BUY_EVAL, or SELL | HOLD for SELL_EVAL",
-  "triggering_rule": "Model-reported governing rule",
+  "signal": "Code-decided BUY | SKIP for BUY_EVAL, or SELL | HOLD for SELL_EVAL",
+  "triggering_rule": "Code-derived governing rule summary",
   "rationale": "Plain-English explanation",
   "data_fetched": {
     "metric_name": "metric value"
@@ -107,11 +133,11 @@ The batch evaluator is instructed to return one object per ticker with exactly t
 }
 ```
 
-The `evaluation_type` argument selects the allowed signal contract. `BUY_EVAL` prompts the model to choose only `BUY` or `SKIP`; `SELL_EVAL` prompts it to choose only `SELL` or `HOLD`. After parsing the JSON, `evaluate_signals_from_data_batch()` validates each returned `signal` against that contract and checks that `triggering_rule` is present and non-empty. The `triggering_rule` is the model's report of which rule it believes it applied; the code checks presence, not correctness. If parsing fails, the model returns a signal outside the active contract, omits a ticker, omits `triggering_rule`, or the evaluator receives an unexpected stop reason, `_error()` returns a structured `ERROR` signal for the affected ticker. Malformed `data_fetched` values are coerced to `{}` so downstream storage stays stable.
+The `evaluation_type` argument selects the deterministic signal contract. `BUY_EVAL` yields only `BUY` or `SKIP`; `SELL_EVAL` yields only `SELL` or `HOLD`. `triggering_rule` remains a single text value because the database column is still `TEXT`; the deterministic evaluator also keeps clause outcomes in memory for rationale generation and future UI work. Temperature now affects rationale wording only, not signal selection. If the rationale call fails, the deterministic signal remains in place with an error-style rationale. The legacy model-decided parser is still present for callers that omit `compiled_rule_set`, but `run_analysis()` uses the approved deterministic path.
 
 ### Tool Schemas: `src/agent/tool_schemas.py`
 
-`TOOL_SCHEMAS` defines the callable tools exposed to Claude. Each schema includes a name, description, input schema, and required fields.
+`TOOL_SCHEMAS` defines the callable tools exposed to Claude. Each schema includes a name, description, input schema, and required fields. `TOOL_SCHEMA_VERSION` lives beside those tool schemas, while `SUPPORTED_METRIC_KEYS` is sourced from `metric_registry.py`, the closed metric menu used by rule compile and validation.
 
 Available tools:
 

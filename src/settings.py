@@ -13,7 +13,26 @@ from paths import seed_user_csv_defaults, user_data_file, user_env_path
 
 
 SETTINGS_FILENAME = "settings.json"
-SETTINGS_KEYS = ("provider", "model", "buy_rules", "sell_rules", "temperature")
+RULE_APPROVAL_UNVALIDATED = "unvalidated"
+RULE_APPROVAL_COMPILED = "compiled"
+RULE_APPROVAL_APPROVED = "approved"
+RULE_APPROVAL_INVALIDATED = "invalidated"
+RULE_APPROVAL_STATES = frozenset({
+    RULE_APPROVAL_UNVALIDATED,
+    RULE_APPROVAL_COMPILED,
+    RULE_APPROVAL_APPROVED,
+    RULE_APPROVAL_INVALIDATED,
+})
+SETTINGS_KEYS = (
+    "provider",
+    "model",
+    "buy_rules",
+    "sell_rules",
+    "temperature",
+    "compiled_rule_set",
+    "compiled_rule_fingerprint",
+    "rule_approval_state",
+)
 PORTFOLIO_COLUMNS = ["ticker", "qty", "entry_price", "entry_date"]
 WATCHLIST_COLUMNS = ["ticker"]
 
@@ -26,6 +45,9 @@ def default_settings() -> dict:
         "buy_rules": config.BUY_RULES,
         "sell_rules": config.SELL_RULES,
         "temperature": _parse_temperature(getattr(config, "TEMPERATURE", None)),
+        "compiled_rule_set": None,
+        "compiled_rule_fingerprint": "",
+        "rule_approval_state": RULE_APPROVAL_UNVALIDATED,
     }
 
 
@@ -56,6 +78,15 @@ def load_settings() -> dict:
             if key in data:
                 settings[key] = _parse_temperature(data[key])
             continue
+        if key == "compiled_rule_set":
+            if isinstance(data.get(key), dict):
+                settings[key] = data[key]
+            continue
+        if key == "rule_approval_state":
+            state = data.get(key)
+            if state in RULE_APPROVAL_STATES:
+                settings[key] = state
+            continue
         if key in data and isinstance(data[key], str):
             settings[key] = data[key]
 
@@ -74,6 +105,12 @@ def save_settings(values: dict) -> None:
         if key == "temperature":
             parsed_temperature = _parse_temperature(values.get(key, current[key]))
             payload[key] = None if parsed_temperature is None else str(parsed_temperature)
+        elif key == "compiled_rule_set":
+            rule_set = values.get(key, current[key])
+            payload[key] = rule_set if isinstance(rule_set, dict) else None
+        elif key == "rule_approval_state":
+            state = values.get(key, current[key])
+            payload[key] = state if state in RULE_APPROVAL_STATES else RULE_APPROVAL_UNVALIDATED
         else:
             payload[key] = str(values.get(key, current[key]))
     payload["provider"] = provider

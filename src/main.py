@@ -38,6 +38,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from settings import clean_portfolio_frame, clean_watchlist_frame, load_settings
 from agent.agent import _TOOL_DISPATCH, evaluate_signals_from_data_batch
+from agent.rule_approval import prepare_rule_set
 from agent.tool_planner import PlannedTool, plan_tools_with_diagnostics
 from agent.tools import get_fmp_request_count, get_fmp_run_request_count
 from database import write_signals
@@ -127,7 +128,14 @@ def _fetch_jobs(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
     return fetched_results, timings
 
 
-def _evaluate_group(fetched_jobs: list[dict], *, rules: str, model: str, evaluation_type: str) -> tuple[list[dict], float]:
+def _evaluate_group(
+    fetched_jobs: list[dict],
+    *,
+    rules: str,
+    model: str,
+    evaluation_type: str,
+    compiled_rule_set: dict | None = None,
+) -> tuple[list[dict], float]:
     if not fetched_jobs:
         return [], 0.0
     started = perf_counter()
@@ -142,6 +150,7 @@ def _evaluate_group(fetched_jobs: list[dict], *, rules: str, model: str, evaluat
         rules=rules,
         model=model,
         evaluation_type=evaluation_type,
+        compiled_rule_set=compiled_rule_set,
     )
     elapsed = perf_counter() - started
     for signal, item in zip(signals, fetched_jobs):
@@ -183,6 +192,31 @@ def run_analysis() -> dict:
         "model": settings["model"],
         "temperature": settings["temperature"],
     }
+    rule_state = prepare_rule_set(settings)
+    if not rule_state["ok"]:
+        total_elapsed = perf_counter() - started
+        summary = {
+            "run_date": run_date,
+            "provider": settings["provider"],
+            "model": settings["model"],
+            "signal_count": 0,
+            "max_workers": 0,
+            "elapsed_seconds": round(total_elapsed, 3),
+            "fmp_requests_this_run": get_fmp_run_request_count(),
+            "fmp_requests_today": get_fmp_request_count(),
+            "blocked": True,
+            "block_code": rule_state.get("code"),
+            "block_message": rule_state.get("message"),
+            "rule_approval_state": rule_state.get("state"),
+            "rule_fingerprint": rule_state.get("fingerprint"),
+        }
+        _write_run_summary(summary)
+        print("\n-- Rule approval gate -------------------------------------------")
+        print(f"  BLOCKED: {summary['block_message']}")
+        print("  Temporary approval: python src/approve_rules.py approve")
+        return summary
+    compiled_rule_set = rule_state["rule_set"]
+
     buy_plan_diagnostics = plan_tools_with_diagnostics(settings["buy_rules"])
     sell_plan_diagnostics = plan_tools_with_diagnostics(settings["sell_rules"])
     buy_plan = buy_plan_diagnostics.tools
@@ -246,6 +280,7 @@ def run_analysis() -> dict:
         rules=settings["buy_rules"],
         model=settings["model"],
         evaluation_type="BUY_EVAL",
+        compiled_rule_set=compiled_rule_set,
     )
     print(f"  BUY_EVAL batch:  {len(buy_signals)} signals ({buy_eval_elapsed:.1f}s)", flush=True)
     sell_signals, sell_eval_elapsed = _evaluate_group(
@@ -253,6 +288,7 @@ def run_analysis() -> dict:
         rules=settings["sell_rules"],
         model=settings["model"],
         evaluation_type="SELL_EVAL",
+        compiled_rule_set=compiled_rule_set,
     )
     print(f"  SELL_EVAL batch: {len(sell_signals)} signals ({sell_eval_elapsed:.1f}s)", flush=True)
     all_signals = buy_signals + sell_signals

@@ -10,12 +10,16 @@ import settings
 
 
 def test_load_settings_merges_defaults_and_handles_missing_or_corrupt_file():
-    assert settings.load_settings() == {
+    loaded_defaults = settings.load_settings()
+    assert loaded_defaults == {
         "provider": config.PROVIDER,
         "model": config.PROVIDER_DEFAULT_MODELS[config.PROVIDER],
         "buy_rules": config.BUY_RULES,
         "sell_rules": config.SELL_RULES,
         "temperature": None,
+        "compiled_rule_set": None,
+        "compiled_rule_fingerprint": "",
+        "rule_approval_state": "unvalidated",
     }
 
     path = Path(settings.settings_path())
@@ -29,6 +33,9 @@ def test_load_settings_merges_defaults_and_handles_missing_or_corrupt_file():
     assert loaded["buy_rules"] == config.BUY_RULES
     assert loaded["sell_rules"] == config.SELL_RULES
     assert loaded["temperature"] is None
+    assert loaded["compiled_rule_set"] is None
+    assert loaded["compiled_rule_fingerprint"] == ""
+    assert loaded["rule_approval_state"] == "unvalidated"
 
     path.write_text("{not json", encoding="utf-8")
 
@@ -51,10 +58,35 @@ def test_save_settings_round_trip_and_keeps_keys_out_of_json():
         "buy_rules": "buy from ui",
         "sell_rules": "sell from ui",
         "temperature": 0.0,
+        "compiled_rule_set": None,
+        "compiled_rule_fingerprint": "",
+        "rule_approval_state": "unvalidated",
     }
     raw = json.loads(Path(settings.settings_path()).read_text(encoding="utf-8"))
     assert "FMP_API_KEY" not in raw
     assert raw["temperature"] == "0.0"
+    assert raw["rule_approval_state"] == "unvalidated"
+
+
+def test_settings_round_trips_compiled_rule_state():
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "RSI below 35", "bound_metric": "rsi", "operator": "<", "threshold": 35}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+
+    settings.save_settings({
+        "provider": "openai",
+        "buy_rules": "buy",
+        "sell_rules": "sell",
+        "compiled_rule_set": rule_set,
+        "compiled_rule_fingerprint": "abc123",
+        "rule_approval_state": "approved",
+    })
+
+    loaded = settings.load_settings()
+    assert loaded["compiled_rule_set"] == rule_set
+    assert loaded["compiled_rule_fingerprint"] == "abc123"
+    assert loaded["rule_approval_state"] == "approved"
 
 
 def test_load_settings_falls_back_to_provider_default_for_bad_temperature():
