@@ -293,3 +293,12 @@ def test_error_contract():
         "rationale": "boom",
         "data_fetched": {},
     }
+
+
+def test_flatten_metrics_derives_volume_vs_average_pct():
+    metrics = agent_module._flatten_metrics({
+        "get_quote": {"volume": 1_500_000},
+        "get_profile": {"average_volume": 1_000_000},
+    })
+
+    assert metrics["volume_vs_average_pct"] == 50.0

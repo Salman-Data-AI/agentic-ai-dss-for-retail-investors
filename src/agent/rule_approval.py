@@ -24,7 +24,7 @@ def prepare_rule_set(settings: dict[str, Any]) -> dict[str, Any]:
 
     Raw rule edits always win over a stale lock. When the current fingerprint no
     longer matches persisted state, this helper compiles the new text and saves
-    it as ``compiled`` so the temporary approval command can lock it later.
+    it as ``compiled`` so the dashboard approval action can lock it later.
     """
     fingerprint = current_rule_fingerprint(settings["buy_rules"], settings["sell_rules"])
     saved_fingerprint = settings.get("compiled_rule_fingerprint") or ""
@@ -86,7 +86,7 @@ def compile_current_settings() -> dict[str, Any]:
 
 
 def approve_current_rule_set() -> dict[str, Any]:
-    """Temporary Chunk 2 approval hook used until the dashboard UI is built."""
+    """Approve the current compiled rule set through the shared state machine."""
     settings = load_settings()
     fingerprint = current_rule_fingerprint(settings["buy_rules"], settings["sell_rules"])
     if settings.get("compiled_rule_fingerprint") != fingerprint or not isinstance(settings.get("compiled_rule_set"), dict):

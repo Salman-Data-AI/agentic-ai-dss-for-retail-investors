@@ -2,7 +2,17 @@ from __future__ import annotations
 
 import importlib.util
 
-from dashboard.logic import build_history_rows, escape_markdown_math, split_signal_groups
+import pytest
+
+from dashboard.logic import (
+    build_history_rows,
+    build_rule_clause_rows,
+    chunk_metrics,
+    describe_rule_gate,
+    escape_markdown_math,
+    format_metric_value,
+    split_signal_groups,
+)
 
 
 def test_split_signal_groups():
@@ -116,6 +126,114 @@ def test_escape_markdown_math_preserves_dollar_prices_as_text():
     text = "Price $359.91 is far above the $251.72 cutoff."
 
     assert escape_markdown_math(text) == "Price \\$359.91 is far above the \\$251.72 cutoff."
+
+
+def test_format_metric_value_rounds_and_trims_floats():
+    assert format_metric_value(33.71428571) == "33.71"
+    assert format_metric_value(112.0) == "112"
+    assert format_metric_value(-18.70) == "-18.7"
+    assert format_metric_value(0.0) == "0"
+
+
+def test_format_metric_value_handles_non_floats():
+    assert format_metric_value(None) == "-"
+    assert format_metric_value(True) == "True"
+    assert format_metric_value(42) == "42"
+    assert format_metric_value("BUY") == "BUY"
+
+
+def test_chunk_metrics_wraps_and_formats():
+    data = {
+        "rsi_14": 73.855,
+        "price_above_52w": 33.71428,
+        "pe_ratio": 14.64,
+        "eps_ttm": 4.37,
+        "volume_vs_average": -18.72,
+    }
+
+    rows = chunk_metrics(data, per_row=4)
+
+    assert [len(row) for row in rows] == [4, 1]
+    assert rows[0][0] == ("Rsi 14", "73.86")
+    assert rows[0][1] == ("Price Above 52W", "33.71")
+    assert rows[1][0] == ("Volume Vs Average", "-18.72")
+
+
+def test_chunk_metrics_rejects_invalid_per_row():
+    with pytest.raises(ValueError):
+        chunk_metrics({"a": 1}, per_row=0)
+
+
+def test_build_rule_clause_rows_surfaces_thresholds():
+    rule_set = {
+        "buy_clauses": [
+            {
+                "user_phrase": "PE ratio is below 20",
+                "bound_metric": "pe_ratio",
+                "operator": "<",
+                "threshold": 20,
+            },
+        ],
+        "sell_clauses": [],
+    }
+
+    rows = build_rule_clause_rows(rule_set, "buy_clauses")
+
+    assert rows == [
+        {
+            "#": 1,
+            "User phrase": "PE ratio is below 20",
+            "Bound metric": "pe_ratio",
+            "Enforced check": "< 20",
+        },
+    ]
+
+
+def test_describe_rule_gate_blocks_unvalidated_rules():
+    gate = describe_rule_gate(
+        {
+            "compiled_rule_fingerprint": "",
+            "compiled_rule_set": None,
+            "rule_approval_state": "unvalidated",
+        },
+        "current",
+    )
+
+    assert gate["state"] == "unvalidated"
+    assert gate["run_enabled"] is False
+    assert gate["approval_enabled"] is False
+    assert "validate before running" in gate["message"]
+
+
+def test_describe_rule_gate_allows_only_current_approved_rules():
+    settings = {
+        "compiled_rule_fingerprint": "abc",
+        "compiled_rule_set": {"buy_clauses": [], "sell_clauses": []},
+        "rule_approval_state": "approved",
+    }
+
+    approved_gate = describe_rule_gate(settings, "abc")
+    stale_gate = describe_rule_gate(settings, "changed")
+
+    assert approved_gate["run_enabled"] is True
+    assert approved_gate["state"] == "approved"
+    assert stale_gate["run_enabled"] is False
+    assert stale_gate["state"] == "stale"
+
+
+def test_describe_rule_gate_enables_approval_for_current_compiled_rules():
+    gate = describe_rule_gate(
+        {
+            "compiled_rule_fingerprint": "abc",
+            "compiled_rule_set": {"buy_clauses": [], "sell_clauses": []},
+            "rule_approval_state": "compiled",
+        },
+        "abc",
+    )
+
+    assert gate["state"] == "compiled"
+    assert gate["approval_enabled"] is True
+    assert gate["run_enabled"] is False
 
 
 def test_streamlit_apptest_import_path_is_available():

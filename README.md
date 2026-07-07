@@ -174,7 +174,7 @@ cd src
 streamlit run dashboard/app.py
 ```
 
-Open the URL shown in the terminal (usually `http://localhost:8501`). Click **Run Analysis** to evaluate your stocks. Results appear on screen with expandable explanations and data.
+Open the URL shown in the terminal (usually `http://localhost:8501`). In **Settings**, review or edit your rules, click **Validate Metrics**, inspect the bound metric and threshold for each compiled clause, then click **Approve Rule Set**. The dashboard-level **Run Analysis** button stays locked until the current rule text has been validated and approved. Results appear on screen with expandable explanations and data.
 
 The dashboard also includes a **Metrics Reference** tab. It is static help content: it does not fetch live data, read the database, or run analysis. Use it to see which metrics the agent can fetch, which source tool provides each metric family, and how to phrase metrics in plain-English BUY or SELL rules. The sample values shown there are a real AAPL snapshot fetched once from FMP on 2026-07-05 at 16:05 UTC; they are static examples and are not automatically refreshed.
 
@@ -240,12 +240,13 @@ The CI build starts from a clean checkout with no local `.env` file. The shared 
 
 ## How it works
 
-1. The agent reads your rules from `config.py`
-2. For each stock, it identifies which data points your rules reference
-3. It fetches only those data points from Financial Modeling Prep
-4. It evaluates the data against your rules and decides the signal: `BUY` or `SKIP` for watchlist stocks, `SELL` or `HOLD` for portfolio holdings
-5. It writes a plain-language explanation of the signal and asks the model to report the governing rule it believes it applied
-6. Results are saved locally to `db/signals.db` and displayed in the dashboard
+1. The dashboard compiles your plain-English rules into metric, operator, and threshold clauses.
+2. You approve the compiled rule set after reviewing the bound thresholds.
+3. For each stock, the app identifies which data points the approved rules require.
+4. It fetches only those data points from Financial Modeling Prep.
+5. It evaluates the data against the approved rules and decides the signal: `BUY` or `SKIP` for watchlist stocks, `SELL` or `HOLD` for portfolio holdings.
+6. It writes a plain-language explanation of the deterministic signal.
+7. Results are saved locally to `db/signals.db` and displayed in the dashboard.
 
 Every run is logged to the database for auditability, including the provider, model, optional temperature, exact rule text applied to each row, and the model-reported `triggering_rule`. The `rules_applied` field stores the rule block in force at the time of the run. The `triggering_rule` field is reported by the model and checked for presence, not independently verified for correctness. The dashboard always shows the most recent run.
 

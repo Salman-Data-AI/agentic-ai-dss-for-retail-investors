@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+import re
 from unittest.mock import Mock
 
 import agent.agent as agent_module
@@ -18,6 +21,20 @@ class FakeClient:
 
     def append_tool_results(self, results):
         raise AssertionError("compile/rationale paths should not request tools")
+
+
+def _metrics_reference_rule_phrases() -> list[str]:
+    app_path = Path(__file__).resolve().parents[1] / "src" / "dashboard" / "app.py"
+    tree = ast.parse(app_path.read_text(encoding="utf-8"))
+    rows = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(target, "id", None) == "_METRIC_REFERENCE" for target in node.targets):
+            rows = ast.literal_eval(node.value)
+            break
+    phrases = []
+    for row in rows:
+        phrases.extend(re.findall(r'"([^"]+)"', row["rule_phrasing"]))
+    return phrases
 
 
 def _patch_provider(module, monkeypatch):
@@ -61,7 +78,7 @@ def test_compile_prompt_explains_entry_price_metric(monkeypatch):
     monkeypatch.setattr(compiler, "create_llm_client", create_client)
 
     compiler.compile_rule_text(
-        buy_rules="free cash flow yield above 4%",
+        buy_rules="management is excellent",
         sell_rules="The current price is more than 25% above my entry price",
         provider="anthropic",
         model="test-model",
@@ -83,6 +100,7 @@ def test_common_rules_compile_deterministically_without_llm(monkeypatch):
         - The current price is within 25% above the 52-week low
         - PE ratio is below 20
         - EPS should be positive
+        - Volume should be above average
         """,
         sell_rules="""
         Consider selling a stock if ANY of the following are true:
@@ -123,22 +141,47 @@ def test_common_rules_compile_deterministically_without_llm(monkeypatch):
             "operator": ">",
             "threshold": 0,
         },
+        {
+            "user_phrase": "Volume should be above average",
+            "bound_metric": "volume_vs_average_pct",
+            "operator": ">",
+            "threshold": 0,
+        },
     ]
     assert result["rule_set"]["sell_clauses"][1]["bound_metric"] == "gain_loss_pct"
     assert result["rule_set"]["sell_clauses"][2]["threshold"] == -15.0
 
 
+def test_metrics_reference_rule_phrases_compile_without_llm(monkeypatch):
+    create_client = Mock()
+    monkeypatch.setattr(compiler, "create_llm_client", create_client)
+
+    failures = []
+    for phrase in _metrics_reference_rule_phrases():
+        result = compiler.compile_rule_text(
+            buy_rules=f"- {phrase}",
+            sell_rules="- RSI above 70",
+            provider="anthropic",
+            model="test-model",
+        )
+        if not result["ok"]:
+            failures.append((phrase, result))
+
+    assert failures == []
+    create_client.assert_not_called()
+
+
 def test_hybrid_compile_sends_only_remaining_clauses_to_llm(monkeypatch):
     _patch_provider(compiler, monkeypatch)
     fake_compile = FakeClient(
-        '{"buy_clauses":[{"user_phrase":"free cash flow yield above 4%","bound_metric":"free_cash_flow_yield_ttm","operator":">","threshold":4}],'
+        '{"buy_clauses":[{"user_phrase":"brand strength above 4","bound_metric":"overall_score","operator":">","threshold":4}],'
         '"sell_clauses":[],"unbound_clauses":[]}'
     )
     create_client = Mock(return_value=fake_compile)
     monkeypatch.setattr(compiler, "create_llm_client", create_client)
 
     result = compiler.compile_rule_text(
-        buy_rules="- RSI below 35\n- free cash flow yield above 4%",
+        buy_rules="- RSI below 35\n- brand strength above 4",
         sell_rules="- RSI above 70",
         provider="anthropic",
         model="test-model",
@@ -147,10 +190,10 @@ def test_hybrid_compile_sends_only_remaining_clauses_to_llm(monkeypatch):
     assert result["ok"] is True
     assert result["compiler"] == "hybrid"
     assert "RSI below 35" not in create_client.call_args.kwargs["user_content"]
-    assert "free cash flow yield above 4%" in create_client.call_args.kwargs["user_content"]
+    assert "brand strength above 4" in create_client.call_args.kwargs["user_content"]
     assert [clause["bound_metric"] for clause in result["rule_set"]["buy_clauses"]] == [
         "rsi",
-        "free_cash_flow_yield_ttm",
+        "overall_score",
     ]
 
 
