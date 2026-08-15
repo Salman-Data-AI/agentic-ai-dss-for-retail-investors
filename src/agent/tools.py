@@ -146,8 +146,10 @@ def _first_row(payload: list | dict) -> dict:
     return row
 
 
-def _round_or_zero(value) -> float:
-    return round(value or 0, 2)
+def _round_or_none(value) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(value, 2)
 
 
 def _as_of_date(value) -> str:
@@ -196,7 +198,7 @@ def get_quote(ticker: str) -> dict:
             "ticker": ticker,
             "name": row.get("name") or symbol,
             "price": row.get("price"),
-            "change_pct": round(row.get("changePercentage", 0), 2),
+            "change_pct": _round_or_none(row.get("changePercentage")),
             "week_52_high": row.get("yearHigh"),
             "week_52_low": row.get("yearLow"),
             "volume": row.get("volume"),
@@ -256,11 +258,19 @@ def get_key_metrics(ticker: str) -> dict:
     """PE ratio and EPS (trailing twelve months) from FMP."""
     try:
         symbol = ticker.upper().strip()
-        row = _first_row(_fmp_get("/ratios-ttm", {"symbol": symbol}))
+        payload = _fmp_get("/ratios-ttm", {"symbol": symbol})
+        if isinstance(payload, list):
+            if not payload:
+                raise RuntimeError("FMP returned an empty response")
+            row = payload[0]
+        else:
+            row = payload
+        if not isinstance(row, dict):
+            raise RuntimeError("FMP returned an invalid response shape")
         return {
             "ticker": ticker,
-            "pe_ratio": _round_or_zero(row.get("priceToEarningsRatioTTM")),
-            "eps_ttm": _round_or_zero(row.get("netIncomePerShareTTM")),
+            "pe_ratio": _round_or_none(row.get("priceToEarningsRatioTTM")),
+            "eps_ttm": _round_or_none(row.get("netIncomePerShareTTM")),
         }
     except Exception as e:
         return {"error": f"Key metrics fetch failed for {ticker}: {e}"}

@@ -140,6 +140,38 @@ def test_get_key_metrics_happy_path_contract(monkeypatch, isolated_fmp_usage):
     assert isinstance(result["eps_ttm"], float)
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [{}],
+        [{"priceToEarningsRatioTTM": None, "netIncomePerShareTTM": None}],
+        [{"priceToEarningsRatioTTM": "18", "netIncomePerShareTTM": "4.2"}],
+    ],
+)
+def test_get_key_metrics_preserves_missing_or_non_numeric_values_as_none(monkeypatch, isolated_fmp_usage, payload):
+    set_http(monkeypatch, FakeResponse(payload=payload))
+
+    result = tools.get_key_metrics("googl")
+
+    assert result == {"ticker": "googl", "pe_ratio": None, "eps_ttm": None}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [{"name": "Apple Inc.", "price": 195.21}],
+        [{"name": "Apple Inc.", "price": 195.21, "changePercentage": None}],
+        [{"name": "Apple Inc.", "price": 195.21, "changePercentage": "1.2"}],
+    ],
+)
+def test_get_quote_preserves_missing_or_non_numeric_change_pct_as_none(monkeypatch, isolated_fmp_usage, payload):
+    set_http(monkeypatch, FakeResponse(payload=payload))
+
+    result = tools.get_quote("aapl")
+
+    assert result["change_pct"] is None
+
+
 @pytest.mark.parametrize("status_code", [404, 401, 402, 403, 429])
 @pytest.mark.parametrize("func", [tools.get_quote, tools.get_rsi, tools.get_sma, tools.get_key_metrics])
 def test_tools_return_error_dict_for_http_failures(monkeypatch, isolated_fmp_usage, func, status_code):

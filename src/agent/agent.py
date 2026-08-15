@@ -251,6 +251,7 @@ def _evaluate_with_deterministic_signals(
             "triggering_rule": evaluation["triggering_rule"],
             "rationale": _format_deterministic_error(evaluation) if evaluation["error"] else "",
             "data_fetched": item.get("fetched_data", {}),
+            "triggering_clauses": evaluation["triggering_clauses"],
             "clause_outcomes": evaluation["clause_outcomes"],
         })
 
@@ -330,11 +331,10 @@ def _parse_rationale_batch_response(deterministic_rows: list[dict], text: str) -
         if not isinstance(rationale, str) or not rationale.strip():
             results.append(_merge_rationale_error(deterministic_row, "Agent omitted non-empty rationale from the response"))
             continue
-        data_fetched = row.get("data_fetched")
         results.append({
             **deterministic_row,
             "rationale": rationale,
-            "data_fetched": data_fetched if isinstance(data_fetched, dict) else deterministic_row["data_fetched"],
+            "data_fetched": deterministic_row["data_fetched"],
         })
     return results
 

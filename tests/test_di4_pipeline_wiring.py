@@ -345,7 +345,33 @@ def test_deterministic_signal_authority_ignores_model_signal(monkeypatch):
 
     assert first[0]["signal"] == "BUY"
     assert first[0]["triggering_rule"] == "RSI below 35"
+    assert first[0]["data_fetched"] == {"get_rsi": {"rsi": 30}}
     assert second[0]["signal"] == "BUY"
+
+
+def test_deterministic_rationale_cannot_overwrite_code_fetched_data(monkeypatch):
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "PE below 20", "bound_metric": "pe_ratio", "operator": "<", "threshold": 20}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+    code_fetched = {"get_key_metrics": {"pe_ratio": 18, "eps_ttm": 4.2}}
+    fake_client = FakeClient(
+        '[{"ticker":"AAPL","rationale":"PE is below the approved threshold.","data_fetched":{"pe_ratio":999,"source":"model"}}]'
+    )
+    monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
+    _patch_provider(agent_module, monkeypatch)
+
+    result = agent_module.evaluate_signals_from_data_batch(
+        [{"ticker": "AAPL", "fetched_data": code_fetched}],
+        "buy when PE below 20",
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+        compiled_rule_set=rule_set,
+    )
+
+    assert result[0]["signal"] == "BUY"
+    assert result[0]["rationale"] == "PE is below the approved threshold."
+    assert result[0]["data_fetched"] == code_fetched
 
 
 def test_deterministic_buy_uses_ttm_metric_aliases(monkeypatch):

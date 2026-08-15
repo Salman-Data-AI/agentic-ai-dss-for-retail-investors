@@ -32,6 +32,32 @@ def test_write_signals_initializes_table_and_round_trips(temp_db_path):
     assert store.read_latest_signals() == signals
 
 
+def test_write_signals_preserves_null_metric_values_in_data_fetched(temp_db_path):
+    signal = {
+        "run_date": "2026-07-02 10:00:00",
+        "ticker": "AAPL",
+        "signal_type": "BUY_EVAL",
+        "signal": "ERROR",
+        "rationale": "PE missing.",
+        "data_fetched": {"get_key_metrics": {"pe_ratio": None, "eps_ttm": None}},
+        "entry_price": None,
+        "provider": "anthropic",
+        "model": "claude-test",
+        "rules_applied": "Buy when PE is below 20.",
+        "triggering_rule": "",
+        "temperature": 0.0,
+        "run_elapsed_seconds": 1.0,
+    }
+
+    store.write_signals([signal])
+
+    round_tripped = store.read_latest_signals()[0]["data_fetched"]
+    assert round_tripped["get_key_metrics"]["pe_ratio"] is None
+    assert round_tripped["get_key_metrics"]["eps_ttm"] is None
+    assert round_tripped["get_key_metrics"]["pe_ratio"] != 0
+    assert round_tripped["get_key_metrics"]["eps_ttm"] != 0
+
+
 def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker(temp_db_path):
     store.write_signals([
         {
