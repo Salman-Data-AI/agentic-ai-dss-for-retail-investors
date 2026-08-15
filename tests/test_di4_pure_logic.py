@@ -170,10 +170,49 @@ def test_sell_evaluation_returns_hold_when_no_clause_is_true():
 
 
 @pytest.mark.parametrize(
+    "operator, equal_signal, below_signal, above_signal",
+    [
+        ("<", "SKIP", "BUY", "SKIP"),
+        ("<=", "BUY", "BUY", "SKIP"),
+        (">", "SKIP", "SKIP", "BUY"),
+        (">=", "BUY", "SKIP", "BUY"),
+        ("==", "BUY", "SKIP", "SKIP"),
+        ("!=", "SKIP", "BUY", "BUY"),
+    ],
+)
+def test_buy_threshold_equality_boundaries(operator, equal_signal, below_signal, above_signal):
+    clause = buy_clause(operator=operator, threshold=20)
+
+    assert evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 20}, BUY_EVALUATION)["signal"] == equal_signal
+    assert evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 19.99}, BUY_EVALUATION)["signal"] == below_signal
+    assert evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 20.01}, BUY_EVALUATION)["signal"] == above_signal
+
+
+@pytest.mark.parametrize(
+    "operator, equal_signal, below_signal, above_signal",
+    [
+        ("<", "HOLD", "SELL", "HOLD"),
+        ("<=", "SELL", "SELL", "HOLD"),
+        (">", "HOLD", "HOLD", "SELL"),
+        (">=", "SELL", "HOLD", "SELL"),
+        ("==", "SELL", "HOLD", "HOLD"),
+        ("!=", "HOLD", "SELL", "SELL"),
+    ],
+)
+def test_sell_threshold_equality_boundaries(operator, equal_signal, below_signal, above_signal):
+    clause = sell_clause(operator=operator, threshold=70)
+
+    assert evaluate_rule_set(rule_set(sell_clauses=[clause]), {"rsi": 70}, SELL_EVALUATION)["signal"] == equal_signal
+    assert evaluate_rule_set(rule_set(sell_clauses=[clause]), {"rsi": 69.99}, SELL_EVALUATION)["signal"] == below_signal
+    assert evaluate_rule_set(rule_set(sell_clauses=[clause]), {"rsi": 70.01}, SELL_EVALUATION)["signal"] == above_signal
+
+
+@pytest.mark.parametrize(
     "metrics, reason",
     [
         ({}, "Metric is missing."),
         ({"pe_ratio": {"error": "provider failed"}}, "Metric value is an error dict."),
+        ({"pe_ratio": None}, "Metric value is not numeric."),
         ({"pe_ratio": "18"}, "Metric value is not numeric."),
     ],
 )

@@ -2,6 +2,14 @@
 
 This release contains the Windows installer for Agentic AI DSS for Retail Investors.
 
+## 0.1.1
+
+- Missing PE, EPS, and daily change metrics now remain absent instead of being converted to `0`.
+- Approved-rule deterministic evaluation now fails closed with `ERROR` when required metrics are missing.
+- Deterministic rationale generation can no longer overwrite the code-fetched `data_fetched` audit payload.
+- Added regression coverage for threshold boundaries, persistence of missing metrics, deterministic reproducibility, and invalid approval-state fallback.
+- Updated README wording for batch evaluation and deterministic approved-rule behavior.
+
 API keys are entered by the user inside the app and stay on that user's machine.
 
 ## If Windows Shows "Windows protected your PC"

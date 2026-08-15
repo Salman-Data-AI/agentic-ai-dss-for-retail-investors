@@ -137,6 +137,7 @@ def test_format_metric_value_rounds_and_trims_floats():
 
 def test_format_metric_value_handles_non_floats():
     assert format_metric_value(None) == "-"
+    assert format_metric_value(None) not in {"0", "None", ""}
     assert format_metric_value(True) == "True"
     assert format_metric_value(42) == "42"
     assert format_metric_value("BUY") == "BUY"
@@ -148,15 +149,17 @@ def test_chunk_metrics_wraps_and_formats():
         "price_above_52w": 33.71428,
         "pe_ratio": 14.64,
         "eps_ttm": 4.37,
+        "missing_metric": None,
         "volume_vs_average": -18.72,
     }
 
     rows = chunk_metrics(data, per_row=4)
 
-    assert [len(row) for row in rows] == [4, 1]
+    assert [len(row) for row in rows] == [4, 2]
     assert rows[0][0] == ("Rsi 14", "73.86")
     assert rows[0][1] == ("Price Above 52W", "33.71")
-    assert rows[1][0] == ("Volume Vs Average", "-18.72")
+    assert rows[1][0] == ("Missing Metric", "-")
+    assert rows[1][1] == ("Volume Vs Average", "-18.72")
 
 
 def test_chunk_metrics_rejects_invalid_per_row():

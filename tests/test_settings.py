@@ -89,6 +89,32 @@ def test_settings_round_trips_compiled_rule_state():
     assert loaded["rule_approval_state"] == "approved"
 
 
+def test_load_settings_invalid_approval_state_is_unvalidated_not_approved():
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "PE below 20", "bound_metric": "pe_ratio", "operator": "<", "threshold": 20}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+    path = Path(settings.settings_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({
+            "provider": "openai",
+            "buy_rules": "buy",
+            "sell_rules": "sell",
+            "compiled_rule_set": rule_set,
+            "compiled_rule_fingerprint": "abc123",
+            "rule_approval_state": "approved-but-corrupt",
+        }),
+        encoding="utf-8",
+    )
+
+    loaded = settings.load_settings()
+
+    assert loaded["compiled_rule_set"] == rule_set
+    assert loaded["compiled_rule_fingerprint"] == "abc123"
+    assert loaded["rule_approval_state"] == "unvalidated"
+
+
 def test_load_settings_falls_back_to_provider_default_for_bad_temperature():
     path = Path(settings.settings_path())
     path.parent.mkdir(parents=True, exist_ok=True)

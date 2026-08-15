@@ -282,7 +282,7 @@ The dashboard's **Metrics Reference** tab mirrors these tool families in plain E
 ```
 src/
 ├── agent/
-│   ├── agent.py          # Provider-agnostic agent loop, one call per stock
+│   ├── agent.py          # Provider-agnostic batch signal evaluation
 │   ├── llm.py            # Anthropic and OpenAI-compatible LLM adapters
 │   ├── tools.py          # Financial Modeling Prep data wrappers
 │   └── tool_schemas.py   # Tool definitions for the Claude API
@@ -305,7 +305,7 @@ src/
 - Designed for **end-of-day analysis** of S&P 500 stocks. Not suitable for intraday trading.
 - Recommendations are based on the rules you define. The system does not predict market movements.
 - Data is sourced from Financial Modeling Prep. Free-plan request limits may apply.
-- The selected LLM interprets your rules; write them clearly for best results.
+- With an approved rule set, signals are computed deterministically in Python; the LLM is used for compile-time binding fallback and rationale generation.
 - Changing providers or models can change agent behavior, so runs from different providers are not directly comparable in research analysis.
 
 ---

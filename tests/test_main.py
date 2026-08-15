@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import main as pipeline
 import settings
+import agent.agent as agent_module
+from agent.llm import LLMResponse
 
 
 class FixedDateTime:
@@ -275,3 +277,64 @@ def test_run_analysis_blocks_before_fetch_when_rules_are_not_approved(workspace_
     assert result["block_code"] == "approval_required"
     assert result["signal_count"] == 0
     assert summaries == [result]
+
+
+def test_run_analysis_reproducible_for_fixed_fetched_data(workspace_tmp_path, monkeypatch):
+    data_dir = workspace_tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "watchlist.csv").write_text("ticker\nAAPL\n", encoding="utf-8")
+    (data_dir / "portfolio.csv").write_text("ticker,qty,entry_price,entry_date\n", encoding="utf-8")
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "PE below 20", "bound_metric": "pe_ratio", "operator": "<", "threshold": 20}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+    writes = []
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        def next_step(self):
+            self.calls += 1
+            return LLMResponse(final_text='[{"ticker":"AAPL","rationale":"Different wording is allowed.","data_fetched":{"pe_ratio":999}}]')
+
+    monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(pipeline, "MAX_WORKERS", 1)
+    monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
+    monkeypatch.setattr(pipeline, "_execute_tool_plan", lambda ticker, plan: {"get_key_metrics": {"pe_ratio": 18, "eps_ttm": 4.2}})
+    monkeypatch.setattr(pipeline, "write_signals", lambda signals: writes.append([dict(signal) for signal in signals]))
+    monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
+    monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
+    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
+        "ok": True,
+        "rule_set": rule_set,
+        "fingerprint": "fp",
+    })
+    monkeypatch.setattr(pipeline, "load_settings", lambda: {
+        "provider": "anthropic",
+        "model": "test-model",
+        "buy_rules": "PE below 20",
+        "sell_rules": "RSI above 70",
+        "temperature": 0.7,
+    })
+    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
+        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
+    })
+    monkeypatch.setattr(agent_module, "create_llm_client", lambda **kwargs: FakeClient())
+
+    pipeline.run_analysis()
+    pipeline.run_analysis()
+
+    def comparable(signal):
+        return {
+            "ticker": signal["ticker"],
+            "signal": signal["signal"],
+            "triggering_rule": signal["triggering_rule"],
+            "triggering_clauses": signal["triggering_clauses"],
+            "clause_outcomes": signal["clause_outcomes"],
+            "data_fetched": signal["data_fetched"],
+        }
+
+    assert len(writes) == 2
+    assert [comparable(signal) for signal in writes[0]] == [comparable(signal) for signal in writes[1]]
