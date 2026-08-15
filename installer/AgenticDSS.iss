@@ -21,8 +21,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 SourceDir=..
-CloseApplications=yes
-CloseApplicationsFilter={#MyAppExeName}
+CloseApplications=no
 RestartApplications=no
 
 [Files]
@@ -37,11 +36,3 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
 
-[Code]
-function InitializeSetup(): Boolean;
-var
-  ResultCode: Integer;
-begin
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM "{#MyAppExeName}" /F >NUL 2>NUL', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Result := True;
-end;
