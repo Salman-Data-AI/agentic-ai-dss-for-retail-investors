@@ -131,7 +131,7 @@ def _evaluate_group(
     rules: str,
     model: str,
     evaluation_type: str,
-    compiled_rule_set: dict | None = None,
+    compiled_rule_set: dict,
 ) -> tuple[list[dict], float]:
     if not fetched_jobs:
         return [], 0.0
@@ -145,9 +145,9 @@ def _evaluate_group(
             for item in fetched_jobs
         ],
         rules=rules,
+        compiled_rule_set=compiled_rule_set,
         model=model,
         evaluation_type=evaluation_type,
-        compiled_rule_set=compiled_rule_set,
     )
     elapsed = perf_counter() - started
     for signal, item in zip(signals, fetched_jobs):
@@ -272,7 +272,7 @@ def run_analysis() -> dict:
     fetched_jobs, timings = _fetch_jobs(jobs)
     buy_fetched = [item for item in fetched_jobs if item["signal_type"] == "BUY_EVAL"]
     sell_fetched = [item for item in fetched_jobs if item["signal_type"] == "SELL_EVAL"]
-    print("\n-- LLM evaluation ------------------------------------------------")
+    print("\n-- Signal evaluation ---------------------------------------------")
     buy_signals, buy_eval_elapsed = _evaluate_group(
         buy_fetched,
         rules=settings["buy_rules"],

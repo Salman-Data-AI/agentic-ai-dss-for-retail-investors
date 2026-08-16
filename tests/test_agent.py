@@ -3,8 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 import agent.agent as agent_module
-from agent.llm import AnthropicAdapter, LLMResponse, OpenAICompatibleAdapter, ToolCall
+from agent.llm import AnthropicAdapter, OpenAICompatibleAdapter, ToolCall
 
 
 def text_block(text):
@@ -22,115 +24,14 @@ def openai_tool_call(name, arguments='{"ticker":"AAPL"}', id_="call-1"):
     )
 
 
-class FakeNormalizedClient:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.appended_results = []
-
-    def next_step(self):
-        return self.responses.pop(0)
-
-    def append_tool_results(self, results):
-        self.appended_results.append(results)
-
-
-def _patch_provider(monkeypatch, provider="anthropic"):
-    monkeypatch.setattr(agent_module.config, "PROVIDER", provider)
-    monkeypatch.setattr(
-        agent_module.config, "PROVIDER_SETTINGS", {provider: {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}}
-    )
-
-
-def test_evaluate_signals_from_data_batch_uses_one_no_tool_client(monkeypatch):
-    fake_client = FakeNormalizedClient(
-        [
-            LLMResponse(
-                final_text=(
-                    "["
-                    '{"ticker":"AAPL","signal":"BUY","triggering_rule":"price rule","rationale":"ok","data_fetched":{"price":200}},'  # noqa: E501
-                    '{"ticker":"MSFT","signal":"SKIP","triggering_rule":"price rule not met","rationale":"steady","data_fetched":{"price":300}}'  # noqa: E501
-                    "]"
-                )
-            ),
-        ]
-    )
-    create_client = Mock(return_value=fake_client)
-
-    monkeypatch.setattr(agent_module, "create_llm_client", create_client)
-    _patch_provider(monkeypatch)
-
-    result = agent_module.evaluate_signals_from_data_batch(
-        [
-            {"ticker": "AAPL", "fetched_data": {"get_quote": {"price": 200}}},
-            {"ticker": "MSFT", "fetched_data": {"get_quote": {"price": 300}}},
-        ],
-        "use price",
-        model="test-model",
-        evaluation_type="BUY_EVAL",
-    )
-
-    assert [row["ticker"] for row in result] == ["AAPL", "MSFT"]
-    assert [row["signal"] for row in result] == ["BUY", "SKIP"]
-    assert create_client.call_count == 1
-    assert create_client.call_args.kwargs["tool_schemas"] == []
-    assert create_client.call_args.kwargs["max_tokens"] == 8192
-    assert create_client.call_args.kwargs["temperature"] is None
-    assert "JSON array" in create_client.call_args.kwargs["system"]
-    assert "Three to four plain-English sentences" in create_client.call_args.kwargs["system"]
-    assert "triggering_rule" in create_client.call_args.kwargs["system"]
-
-
-def test_evaluate_signals_from_data_batch_handles_bad_rows(monkeypatch):
-    fake_client = FakeNormalizedClient(
-        [
-            LLMResponse(
-                final_text='[{"ticker":"AAPL","signal":"SELL","triggering_rule":"bad rule","rationale":"bad","data_fetched":{}}]'  # noqa: E501
-            ),
-        ]
-    )
-
-    monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
-    _patch_provider(monkeypatch)
-
-    result = agent_module.evaluate_signals_from_data_batch(
-        [
-            {"ticker": "AAPL", "fetched_data": {}},
-            {"ticker": "MSFT", "fetched_data": {}},
-        ],
-        "rules",
-        evaluation_type="BUY_EVAL",
-    )
-
-    assert result[0]["signal"] == "ERROR"
-    assert "invalid signal 'SELL'" in result[0]["rationale"]
-    assert result[1]["signal"] == "ERROR"
-    assert "omitted this ticker" in result[1]["rationale"]
-
-
-def test_parse_signal_batch_response_requires_triggering_rule():
-    result = agent_module._parse_signal_batch_response(
-        items=[{"ticker": "AAPL", "fetched_data": {}}],
-        text='[{"ticker":"AAPL","signal":"BUY","rationale":"ok","data_fetched":{}}]',
-        contract=agent_module._SIGNAL_CONTRACTS["BUY_EVAL"],
-        evaluation_type="BUY_EVAL",
-        allowed_signals="BUY | SKIP",
-    )
-
-    assert result[0]["signal"] == "ERROR"
-    assert "triggering_rule" in result[0]["rationale"]
-
-
-def test_parse_signal_batch_response_coerces_malformed_data_fetched():
-    result = agent_module._parse_signal_batch_response(
-        items=[{"ticker": "AAPL", "fetched_data": {}}],
-        text='[{"ticker":"AAPL","signal":"BUY","triggering_rule":"RSI below 35","rationale":"ok","data_fetched":"bad"}]',  # noqa: E501
-        contract=agent_module._SIGNAL_CONTRACTS["BUY_EVAL"],
-        evaluation_type="BUY_EVAL",
-        allowed_signals="BUY | SKIP",
-    )
-
-    assert result[0]["signal"] == "BUY"
-    assert result[0]["data_fetched"] == {}
+def test_evaluate_signals_from_data_batch_requires_compiled_rule_set():
+    with pytest.raises(TypeError):
+        agent_module.evaluate_signals_from_data_batch(
+            [{"ticker": "AAPL", "fetched_data": {"get_quote": {"price": 200}}}],
+            "use price",
+            model="test-model",
+            evaluation_type="BUY_EVAL",
+        )
 
 
 def test_anthropic_adapter_preserves_tool_use_message_flow():

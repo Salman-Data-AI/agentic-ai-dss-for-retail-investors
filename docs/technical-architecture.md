@@ -91,7 +91,7 @@ The rules are intentionally written as natural language so the user can change s
 
 `src/agent/rule_compiler.py` turns the current BUY and SELL rule text into the Chunk 1 compiled rule-set shape validated by `src/agent/rule_sets.py`. The compiler is hybrid: it first applies deterministic pattern bindings for common supported rules such as RSI thresholds, PE thresholds, positive EPS, distance from the 52-week low/high, and entry-price gain/loss. Only clauses that remain ambiguous are sent to the selected provider through `create_llm_client(...)` with no tools exposed. Because the current provider adapters expose text responses rather than a guaranteed native JSON mode for every provider, the LLM fallback contract is prompt-enforced JSON followed by strict parsing and validation.
 
-The closed metric menu is defined in `src/agent/metric_registry.py` and re-exported as `SUPPORTED_METRIC_KEYS` for validation. The registry records canonical metric keys, aliases, valid evaluation types, source tools/fields, units, and examples for the main metrics used by the compiler. `TOOL_SCHEMA_VERSION` and `COMPILE_PROMPT_VERSION` version the metric/prompt contract. The approval fingerprint is computed by `fingerprint_rule_inputs(rule_text, tool_schema_version, prompt_version)`. Provider and model are deliberately excluded because deterministic patterns plus registry-guided fallback are intended to produce provider-independent bindings; if future compile output carries model-specific behavior, this assumption should be revisited.
+The closed metric menu is defined in `src/agent/metric_registry.py`, which also owns `SUPPORTED_METRIC_KEYS` for validation. The registry records canonical metric keys, aliases, valid evaluation types, source tools/fields, units, and examples for the main metrics used by the compiler. `TOOL_SCHEMA_VERSION` and `COMPILE_PROMPT_VERSION` version the metric/prompt contract. The approval fingerprint is computed by `fingerprint_rule_inputs(rule_text, tool_schema_version, prompt_version)`. Provider and model are deliberately excluded because deterministic patterns plus registry-guided fallback are intended to produce provider-independent bindings; if future compile output carries model-specific behavior, this assumption should be revisited.
 
 Compile is fail-closed. If any clause cannot be bound to one supported numeric metric comparison, the compiler returns a structured block with `unbound_clauses` and does not silently drop the clause. `src/main.py::run_analysis()` calls `prepare_rule_set()` before fetch and evaluation. A rule set that is not approved cannot run analysis, so the pipeline blocks before making FMP requests.
 
@@ -103,7 +103,7 @@ Automated tests mock provider clients for compile, state-machine, gate, and dete
 
 `src/agent/tool_planner.py::plan_tools_for_rules(rules)` converts each rule string into a fixed tool plan for that run. The BUY plan is reused for every watchlist ticker, and the SELL plan is reused for every portfolio holding. `plan_tools_with_diagnostics(rules)` returns the same plan plus a flag for the silent quote-fallback case, so `main.py` can warn when a rule set did not map to any specific data tool.
 
-`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, model, evaluation_type, compiled_rule_set=...)` evaluates a group of prefetched ticker payloads in one provider call for rationale only when a compiled rule set is supplied. The deterministic evaluator owns `signal` and `triggering_rule`; the model cannot override them.
+`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, compiled_rule_set, model, evaluation_type)` requires an approved compiled rule set and evaluates a group of prefetched ticker payloads deterministically before making a provider call for rationale only. The deterministic evaluator owns `signal` and `triggering_rule`; the model cannot override them.
 
 The flow:
 
@@ -112,13 +112,11 @@ The flow:
 3. Calls the selected provider with no tools exposed for rationale text only.
 4. Parses the final JSON array and maps each rationale back to its input ticker.
 
-The batch evaluator is instructed to return one object per ticker with exactly this shape:
+The rationale step is instructed to return one object per ticker with exactly this shape:
 
 ```json
 {
   "ticker": "AAPL",
-  "signal": "Code-decided BUY | SKIP for BUY_EVAL, or SELL | HOLD for SELL_EVAL",
-  "triggering_rule": "Code-derived governing rule summary",
   "rationale": "Plain-English explanation",
   "data_fetched": {
     "metric_name": "metric value"
@@ -126,7 +124,7 @@ The batch evaluator is instructed to return one object per ticker with exactly t
 }
 ```
 
-The `evaluation_type` argument selects the deterministic signal contract. `BUY_EVAL` yields only `BUY` or `SKIP`; `SELL_EVAL` yields only `SELL` or `HOLD`. `triggering_rule` remains a single text value because the database column is still `TEXT`; the deterministic evaluator also keeps clause outcomes in memory for rationale generation and future UI work. Temperature now affects rationale wording only, not signal selection. If the rationale call fails, the deterministic signal remains in place with an error-style rationale. The legacy model-decided parser is still present for callers that omit `compiled_rule_set`, but `run_analysis()` uses the approved deterministic path.
+The `evaluation_type` argument selects the deterministic signal contract. `BUY_EVAL` yields only `BUY` or `SKIP`; `SELL_EVAL` yields only `SELL` or `HOLD`. `triggering_rule` remains a single text value because the database column is still `TEXT`; the deterministic evaluator also keeps clause outcomes in memory for rationale generation and future UI work. Temperature now affects rationale wording only, not signal selection. If the rationale call fails, the deterministic signal remains in place with an error-style rationale.
 
 ### Tool Schemas: `src/agent/tool_schemas.py`
 
@@ -212,7 +210,7 @@ The agent does not read from the database. The database exists for persistence, 
 
 `data_fetched` is JSON-serialized as text. Nested dictionaries and lists from bundle tools are preserved on write and restored on read; no schema change is required for nested tool outputs.
 
-`rules_applied` stores the exact BUY or SELL rule block used for that signal row, so later rule edits do not change the audit context for old rows. `triggering_rule` stores the model-reported governing rule and is validated for presence only. `temperature` is nullable because the default configuration omits the parameter and lets the provider use its default.
+`rules_applied` stores the exact BUY or SELL rule block used for that signal row, so later rule edits do not change the audit context for old rows. `triggering_rule` stores the code-derived governing rule. `temperature` is nullable because the default configuration omits the parameter and lets the provider use its default.
 
 ### Dashboard: `src/dashboard/app.py`
 
@@ -263,7 +261,7 @@ plan_tools_for_rules(buy_rules / sell_rules)
 tools.py fetches the planned FMP stable data for each ticker, using per-run cache for duplicate endpoint/ticker/params calls
       |
       v
-evaluate_signals_from_data_batch(items, rules, evaluation_type)
+evaluate_signals_from_data_batch(items, rules, compiled_rule_set, evaluation_type)
       |
       v
 write_signals()
@@ -347,7 +345,7 @@ JPM,10,195.50,2024-11-15
 META,5,520.00,2024-10-03
 ```
 
-Each holding is evaluated against `SELL_RULES`. The entry price, quantity, and date are included in the prompt context.
+Each holding is evaluated against `SELL_RULES`. The entry price, quantity, and date are included in the fetched-data context.
 
 Valid successful portfolio signals are:
 
@@ -361,7 +359,7 @@ Each evaluated ticker produces:
 - `ticker`: stock symbol.
 - `signal`: `BUY` or `SKIP` for watchlist evaluations; `SELL` or `HOLD` for portfolio evaluations; `ERROR` for failures.
 - `signal_type`: `BUY_EVAL` or `SELL_EVAL`.
-- `triggering_rule`: model-reported governing rule; presence is validated, correctness is not independently verified.
+- `triggering_rule`: code-derived governing rule from the approved compiled rule set.
 - `rationale`: plain-English explanation.
 - `data_fetched`: JSON-serialized dictionary of metrics used.
 - `entry_price`: included for portfolio evaluations.
@@ -406,7 +404,7 @@ The key is loaded from `.env` using `load_dotenv()`.
 The system handles errors at several levels:
 
 - Market data functions return `{"error": "..."}` on fetch, permission, rate-limit, empty-response, invalid-response, or network failure.
-- The agent returns an `ERROR` signal if Claude output cannot be parsed as JSON.
+- The agent returns an `ERROR` signal if deterministic evaluation cannot evaluate a required metric.
 - The dashboard catches analysis failures and displays the exception text.
 - SQLite table initialization runs before reads and writes, so a missing database file is created automatically.
 
@@ -440,8 +438,8 @@ To change the UI:
 - The FMP free tier is constrained by daily request limits; the app tracks daily usage locally and uses per-run caching to avoid duplicate calls.
 - Fundamentals are annual only. Quarterly fundamentals are not requested because the free tier can return plan-gating errors.
 - The planner maps user-rule wording to fixed tool sets, so ambiguous or novel wording may require planner updates.
-- The current database stores an audit log of generated signals and the rule text used for each signal, but it does not store raw historical market data beyond the compact `data_fetched` payload returned by the model.
-- Lower temperature can reduce variation, but it does not make LLM outputs deterministic or prove signal correctness.
+- The current database stores an audit log of generated signals and the rule text used for each signal, but it does not store raw historical market data beyond the compact `data_fetched` payload preserved by the evaluator.
+- Lower temperature can reduce rationale wording variation, but it does not affect signal selection.
 - The current analysis path evaluates tickers in parallel with `MAX_WORKERS = 3`.
 - The dashboard displays the latest run only.
 

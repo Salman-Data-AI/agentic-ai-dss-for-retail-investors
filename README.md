@@ -248,7 +248,7 @@ The CI build starts from a clean checkout with no local `.env` file. The shared 
 6. It writes a plain-language explanation of the deterministic signal.
 7. Results are saved locally to `db/signals.db` and displayed in the dashboard.
 
-Every run is logged to the database for auditability, including the provider, model, optional temperature, exact rule text applied to each row, and the model-reported `triggering_rule`. The `rules_applied` field stores the rule block in force at the time of the run. The `triggering_rule` field is reported by the model and checked for presence, not independently verified for correctness. The dashboard always shows the most recent run.
+Every run is logged to the database for auditability, including the provider, model, optional temperature, exact rule text applied to each row, and the code-derived `triggering_rule`. The `rules_applied` field stores the rule block in force at the time of the run. The dashboard always shows the most recent run.
 
 ### Market data tools
 

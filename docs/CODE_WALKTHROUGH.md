@@ -149,8 +149,8 @@ The dashboard calls the same `run_analysis()` function in-process.
 7. Reads app-data `watchlist.csv` and creates BUY jobs.
 8. Reads app-data `portfolio.csv` and creates SELL jobs with holding context.
 9. Fetches each ticker's planned data with a `ThreadPoolExecutor`, capped by `MAX_WORKERS = 3`.
-10. Evaluates all BUY fetched jobs in one LLM batch.
-11. Evaluates all SELL fetched jobs in one LLM batch.
+10. Evaluates all BUY fetched jobs deterministically and requests rationale text.
+11. Evaluates all SELL fetched jobs deterministically and requests rationale text.
 12. Merges each job's metadata into the returned signal.
 13. Adds `run_elapsed_seconds` to each signal.
 14. Writes all signals through `database.write_signals()`.
@@ -170,7 +170,7 @@ SELL job metadata adds:
 - `entry_price`
 - `rules_applied = settings["sell_rules"]`
 
-`_evaluate_group()` is the join point where the LLM result gets the job metadata:
+`_evaluate_group()` is the join point where the evaluated signal gets the job metadata:
 
 ```python
 signal.update(item["job"]["metadata"])
@@ -205,28 +205,29 @@ The main dispatch map lives in `src/agent/agent.py` as `_TOOL_DISPATCH`. `main.p
 
 Tool functions return dictionaries. On HTTP, permission, quota, empty-response, malformed-response, or network failures, tools return error dictionaries rather than raising. FMP usage is tracked in app-data `fmp_usage.json`, and an in-process cache avoids duplicate endpoint/ticker/parameter requests during one Python process.
 
-## 8. Batch LLM Evaluation
+## 8. Deterministic Signal Evaluation
 
 `src/agent/agent.py::evaluate_signals_from_data_batch()` accepts:
 
 - `items`: a list of `{"ticker": ..., "fetched_data": ...}` dictionaries
 - `rules`
+- `compiled_rule_set`
 - `model`
 - `evaluation_type`
 
-The active signal contract depends on `evaluation_type`:
+`compiled_rule_set` is required. Omitting it is a `TypeError`, so callers cannot silently fall back to model-decided signals.
+
+The active deterministic signal contract depends on `evaluation_type`:
 
 - `BUY_EVAL`: successful signals must be `BUY` or `SKIP`.
 - `SELL_EVAL`: successful signals must be `SELL` or `HOLD`.
-- `GENERAL`: successful signals must be `BUY`, `SELL`, or `HOLD`.
+- Other evaluation types return `ERROR`.
 
-The LLM prompt requires one JSON object per input ticker with exactly these fields:
+The deterministic evaluator owns `signal` and `triggering_rule`. The LLM rationale prompt receives the already-decided signal and requires one JSON object per input ticker with rationale-only fields:
 
 ```json
 {
   "ticker": "AAPL",
-  "signal": "BUY",
-  "triggering_rule": "RSI below 35",
   "rationale": "Plain-English explanation that names the rule.",
   "data_fetched": {
     "metric_name": "compact value"
@@ -234,9 +235,9 @@ The LLM prompt requires one JSON object per input ticker with exactly these fiel
 }
 ```
 
-The parser extracts the JSON array, maps rows back to input tickers, validates the signal vocabulary, and checks that `triggering_rule` is present and non-empty. This is presence validation only: the model reports which rule it believes it applied, and the code does not independently prove that the correct rule fired.
+The rationale parser extracts the JSON array and maps rows back to input tickers. It does not accept signal or triggering-rule changes from the model.
 
-If `data_fetched` is missing or malformed, the parser coerces it to `{}` rather than crashing downstream storage. If a ticker is omitted, a signal is invalid, `triggering_rule` is missing, JSON parsing fails, the provider asks for tools, or the provider returns no text, the result for that ticker is:
+If a ticker is omitted, JSON parsing fails, the provider asks for tools, or the provider returns no text, the deterministic signal remains in place and the rationale records the provider error. If a compiled metric is missing, non-numeric, or an error dict, the result for that ticker is:
 
 ```python
 {
@@ -244,7 +245,7 @@ If `data_fetched` is missing or malformed, the parser coerces it to `{}` rather 
     "signal": "ERROR",
     "triggering_rule": "",
     "rationale": msg,
-    "data_fetched": {},
+    "data_fetched": fetched_data,
 }
 ```
 
@@ -286,7 +287,7 @@ The `signals` table is created with:
 
 `write_signals()` JSON-serializes `data_fetched`, inserts all audit fields, and commits the batch. `read_latest_signals()` and `read_filtered_signals()` select columns in the same order consumed by `_row_to_dict()`.
 
-`rules_applied` stores the exact BUY or SELL rule block used for the row. `triggering_rule` stores the model-reported governing rule. `temperature` is nullable.
+`rules_applied` stores the exact BUY or SELL rule block used for the row. `triggering_rule` stores the code-derived governing rule. `temperature` is nullable.
 
 ## 11. Dashboard
 
@@ -338,7 +339,7 @@ Dashboard display uses `dashboard.logic.normalize_signal_for_display()` to map o
 
 `src/consistency_check.py` is a developer/evaluation tool, not part of the normal user run path or frozen entry points.
 
-It fetches data once for a small ticker list, calls `evaluate_signals_from_data_batch()` repeatedly against the same fetched payload, and prints signal agreement plus disagreements. It measures output stability only. It does not validate signal correctness.
+It fetches data once for a small ticker list, calls `evaluate_signals_from_data_batch()` repeatedly against the same fetched payload and approved compiled rule set, and prints signal agreement plus disagreements. It measures signal stability only. It does not validate signal correctness.
 
 Example:
 
@@ -355,7 +356,7 @@ Pytest is the test runner.
 Coverage includes:
 
 - FMP tool shapes, errors, cache, and usage counting.
-- Batch LLM parsing and adapter behavior with mocked clients.
+- Deterministic signal authority, rationale parsing, and adapter behavior with mocked clients.
 - Provider settings and adapter routing.
 - Runtime settings load/save behavior.
 - `run_analysis()` orchestration.
@@ -371,7 +372,7 @@ Tests are offline: they use fake HTTP clients, fake LLM clients, dummy keys, tem
 
 - The artefact is decision support, not automated trading.
 - FMP data availability and quota depend on the configured API plan.
-- `triggering_rule` is model-reported and presence-validated, not correctness-verified.
-- Lower temperature can reduce output variation, but does not guarantee identical outputs.
+- `triggering_rule` is code-derived from the approved compiled rule set.
+- Lower temperature can reduce rationale wording variation, but does not affect signal selection.
 - The planner maps recognized wording to fixed tool sets; novel or ambiguous wording may fall back to quote-only data until planner keywords are expanded.
 - The dashboard provides latest-run display and filtered history rows, not full historical analytics.
