@@ -67,7 +67,9 @@ def test_validation_rejects_unknown_metric():
     ],
 )
 def test_validation_rejects_operator_threshold_mismatch(operator, threshold):
-    result = validate_rule_set(rule_set(buy_clauses=[buy_clause(operator=operator, threshold=threshold)]), ALLOWED_METRICS)
+    result = validate_rule_set(
+        rule_set(buy_clauses=[buy_clause(operator=operator, threshold=threshold)]), ALLOWED_METRICS
+    )
 
     assert result["valid"] is False
 
@@ -124,7 +126,9 @@ def test_fingerprint_preserves_interior_blank_line_changes():
 
 def test_buy_evaluation_returns_buy_when_all_clauses_true():
     result = evaluate_rule_set(
-        rule_set(buy_clauses=[buy_clause(), buy_clause(user_phrase="RSI is under 35", bound_metric="rsi", threshold=35)]),
+        rule_set(
+            buy_clauses=[buy_clause(), buy_clause(user_phrase="RSI is under 35", bound_metric="rsi", threshold=35)]
+        ),
         {"pe_ratio": 18, "rsi": 30},
         BUY_EVALUATION,
     )
@@ -135,10 +139,14 @@ def test_buy_evaluation_returns_buy_when_all_clauses_true():
 
 
 def test_buy_evaluation_returns_skip_with_failing_clause():
-    result = evaluate_rule_set(rule_set(buy_clauses=[buy_clause(), buy_clause(bound_metric="rsi", threshold=35)]), {
-        "pe_ratio": 18,
-        "rsi": 50,
-    }, BUY_EVALUATION)
+    result = evaluate_rule_set(
+        rule_set(buy_clauses=[buy_clause(), buy_clause(bound_metric="rsi", threshold=35)]),
+        {
+            "pe_ratio": 18,
+            "rsi": 50,
+        },
+        BUY_EVALUATION,
+    )
 
     assert result["signal"] == "SKIP"
     assert len(result["triggering_clauses"]) == 1
@@ -147,11 +155,13 @@ def test_buy_evaluation_returns_skip_with_failing_clause():
 
 def test_sell_evaluation_returns_sell_when_any_clause_true_and_reports_all_firing_clauses():
     result = evaluate_rule_set(
-        rule_set(sell_clauses=[
-            sell_clause(),
-            sell_clause(user_phrase="Debt is high", bound_metric="debt_to_equity", operator=">", threshold=2),
-            sell_clause(user_phrase="PE is expensive", bound_metric="pe_ratio", operator=">", threshold=40),
-        ]),
+        rule_set(
+            sell_clauses=[
+                sell_clause(),
+                sell_clause(user_phrase="Debt is high", bound_metric="debt_to_equity", operator=">", threshold=2),
+                sell_clause(user_phrase="PE is expensive", bound_metric="pe_ratio", operator=">", threshold=40),
+            ]
+        ),
         {"rsi": 72, "debt_to_equity": 2.5, "pe_ratio": 28},
         SELL_EVALUATION,
     )
@@ -184,8 +194,12 @@ def test_buy_threshold_equality_boundaries(operator, equal_signal, below_signal,
     clause = buy_clause(operator=operator, threshold=20)
 
     assert evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 20}, BUY_EVALUATION)["signal"] == equal_signal
-    assert evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 19.99}, BUY_EVALUATION)["signal"] == below_signal
-    assert evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 20.01}, BUY_EVALUATION)["signal"] == above_signal
+    assert (
+        evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 19.99}, BUY_EVALUATION)["signal"] == below_signal
+    )
+    assert (
+        evaluate_rule_set(rule_set(buy_clauses=[clause]), {"pe_ratio": 20.01}, BUY_EVALUATION)["signal"] == above_signal
+    )
 
 
 @pytest.mark.parametrize(

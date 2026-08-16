@@ -47,23 +47,31 @@ def assert_error(result):
 
 
 def test_get_quote_happy_path_contract(monkeypatch, isolated_fmp_usage):
-    payload = [{
-        "symbol": "AAPL",
-        "name": "Apple Inc.",
-        "price": 195.21,
-        "changePercentage": 1.234,
-        "yearHigh": 237.49,
-        "yearLow": 164.08,
-        "volume": 51234567,
-        "marketCap": 2999000000000,
-    }]
+    payload = [
+        {
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "price": 195.21,
+            "changePercentage": 1.234,
+            "yearHigh": 237.49,
+            "yearLow": 164.08,
+            "volume": 51234567,
+            "marketCap": 2999000000000,
+        }
+    ]
     set_http(monkeypatch, FakeResponse(payload=payload))
 
     result = tools.get_quote("aapl")
 
     assert set(result) == {
-        "ticker", "name", "price", "change_pct", "week_52_high",
-        "week_52_low", "volume", "market_cap",
+        "ticker",
+        "name",
+        "price",
+        "change_pct",
+        "week_52_high",
+        "week_52_low",
+        "volume",
+        "market_cap",
     }
     assert result == {
         "ticker": "aapl",
@@ -126,10 +134,17 @@ def test_indicator_custom_period_is_passed_through(monkeypatch, isolated_fmp_usa
 
 
 def test_get_key_metrics_happy_path_contract(monkeypatch, isolated_fmp_usage):
-    set_http(monkeypatch, FakeResponse(payload=[{
-        "priceToEarningsRatioTTM": 24.991,
-        "netIncomePerShareTTM": 6.123,
-    }]))
+    set_http(
+        monkeypatch,
+        FakeResponse(
+            payload=[
+                {
+                    "priceToEarningsRatioTTM": 24.991,
+                    "netIncomePerShareTTM": 6.123,
+                }
+            ]
+        ),
+    )
 
     result = tools.get_key_metrics("googl")
 
@@ -245,79 +260,89 @@ def test_fmp_request_counter_and_daily_tally(monkeypatch, isolated_fmp_usage):
         (
             tools.get_valuation_ratios,
             "/ratios-ttm",
-            [{
-                "priceToEarningsRatioTTM": 25.1,
-                "priceToBookRatioTTM": 8.2,
-                "priceToSalesRatioTTM": 6.3,
-                "priceToEarningsGrowthRatioTTM": 1.4,
-                "debtToEquityRatioTTM": 1.1,
-                "currentRatioTTM": 1.8,
-                "quickRatioTTM": 1.2,
-                "interestCoverageRatioTTM": 22.0,
-                "grossProfitMarginTTM": 0.44,
-                "netProfitMarginTTM": 0.21,
-                "operatingProfitMarginTTM": 0.29,
-            }],
+            [
+                {
+                    "priceToEarningsRatioTTM": 25.1,
+                    "priceToBookRatioTTM": 8.2,
+                    "priceToSalesRatioTTM": 6.3,
+                    "priceToEarningsGrowthRatioTTM": 1.4,
+                    "debtToEquityRatioTTM": 1.1,
+                    "currentRatioTTM": 1.8,
+                    "quickRatioTTM": 1.2,
+                    "interestCoverageRatioTTM": 22.0,
+                    "grossProfitMarginTTM": 0.44,
+                    "netProfitMarginTTM": 0.21,
+                    "operatingProfitMarginTTM": 0.29,
+                }
+            ],
             {"pe_ratio_ttm": 25.1, "peg_ratio_ttm": 1.4, "net_profit_margin_ttm": 0.21},
             {},
         ),
         (
             tools.get_financial_health,
             "/key-metrics-ttm",
-            [{
-                "returnOnEquityTTM": 0.31,
-                "returnOnAssetsTTM": 0.18,
-                "returnOnInvestedCapitalTTM": 0.24,
-                "evToEBITDATTM": 19.2,
-                "freeCashFlowYieldTTM": 0.03,
-                "earningsYieldTTM": 0.04,
-                "netDebtToEBITDATTM": 0.7,
-                "grahamNumberTTM": 88.5,
-            }],
+            [
+                {
+                    "returnOnEquityTTM": 0.31,
+                    "returnOnAssetsTTM": 0.18,
+                    "returnOnInvestedCapitalTTM": 0.24,
+                    "evToEBITDATTM": 19.2,
+                    "freeCashFlowYieldTTM": 0.03,
+                    "earningsYieldTTM": 0.04,
+                    "netDebtToEBITDATTM": 0.7,
+                    "grahamNumberTTM": 88.5,
+                }
+            ],
             {"return_on_equity_ttm": 0.31, "ev_to_ebitda_ttm": 19.2, "graham_number_ttm": 88.5},
             {},
         ),
         (
             tools.get_income_statement,
             "/income-statement",
-            [{
-                "revenue": 1000,
-                "grossProfit": 600,
-                "ebitda": 300,
-                "operatingIncome": 250,
-                "netIncome": 200,
-                "eps": 5.2,
-                "epsDiluted": 5.0,
-                "fiscalYear": "2025",
-            }],
+            [
+                {
+                    "revenue": 1000,
+                    "grossProfit": 600,
+                    "ebitda": 300,
+                    "operatingIncome": 250,
+                    "netIncome": 200,
+                    "eps": 5.2,
+                    "epsDiluted": 5.0,
+                    "fiscalYear": "2025",
+                }
+            ],
             {"revenue": 1000, "gross_profit": 600, "eps_diluted": 5.0, "fiscal_year": "2025"},
             {"period": "annual", "limit": 1},
         ),
         (
             tools.get_balance_sheet,
             "/balance-sheet-statement",
-            [{
-                "totalAssets": 5000,
-                "totalCurrentAssets": 1800,
-                "totalCurrentLiabilities": 900,
-                "longTermDebt": 700,
-                "shortTermDebt": 80,
-                "cashAndShortTermInvestments": 650,
-                "inventory": 120,
-            }],
+            [
+                {
+                    "totalAssets": 5000,
+                    "totalCurrentAssets": 1800,
+                    "totalCurrentLiabilities": 900,
+                    "longTermDebt": 700,
+                    "shortTermDebt": 80,
+                    "cashAndShortTermInvestments": 650,
+                    "inventory": 120,
+                }
+            ],
             {"total_assets": 5000, "long_term_debt": 700, "cash_and_short_term_investments": 650},
             {"period": "annual", "limit": 1},
         ),
         (
             tools.get_cash_flow,
             "/cash-flow-statement",
-            [{
-                "netCashProvidedByOperatingActivities": 400,
-                "investmentsInPropertyPlantAndEquipment": -90,
-                "netDividendsPaid": -40,
-                "commonStockRepurchased": -75,
-                "netChangeInCash": 20,
-            }],
+            [
+                {
+                    "netCashProvidedByOperatingActivities": 400,
+                    "investmentsInPropertyPlantAndEquipment": -90,
+                    "netDividendsPaid": -40,
+                    "commonStockRepurchased": -75,
+                    "netChangeInCash": 20,
+                }
+            ],
             {"operating_cash_flow": 400, "capital_expenditures": -90, "net_change_in_cash": 20},
             {"period": "annual", "limit": 1},
         ),
@@ -331,19 +356,21 @@ def test_fmp_request_counter_and_daily_tally(monkeypatch, isolated_fmp_usage):
         (
             tools.get_profile,
             "/profile",
-            [{
-                "beta": 1.2,
-                "sector": "Technology",
-                "industry": "Consumer Electronics",
-                "exchange": "NASDAQ",
-                "marketCap": 3000,
-                "averageVolume": 500,
-                "isEtf": False,
-                "isFund": False,
-                "isAdr": False,
-                "ipoDate": "1980-12-12",
-                "lastDividend": 0.25,
-            }],
+            [
+                {
+                    "beta": 1.2,
+                    "sector": "Technology",
+                    "industry": "Consumer Electronics",
+                    "exchange": "NASDAQ",
+                    "marketCap": 3000,
+                    "averageVolume": 500,
+                    "isEtf": False,
+                    "isFund": False,
+                    "isAdr": False,
+                    "ipoDate": "1980-12-12",
+                    "lastDividend": 0.25,
+                }
+            ],
             {"beta": 1.2, "sector": "Technology", "market_cap": 3000, "is_etf": False},
             {},
         ),
@@ -357,16 +384,18 @@ def test_fmp_request_counter_and_daily_tally(monkeypatch, isolated_fmp_usage):
         (
             tools.get_analyst_rating,
             "/ratings-snapshot",
-            [{
-                "rating": "B+",
-                "overallScore": 4,
-                "discountedCashFlowScore": 5,
-                "returnOnEquityScore": 4,
-                "returnOnAssetsScore": 3,
-                "debtToEquityScore": 4,
-                "priceToEarningsScore": 2,
-                "priceToBookScore": 3,
-            }],
+            [
+                {
+                    "rating": "B+",
+                    "overallScore": 4,
+                    "discountedCashFlowScore": 5,
+                    "returnOnEquityScore": 4,
+                    "returnOnAssetsScore": 3,
+                    "debtToEquityScore": 4,
+                    "priceToEarningsScore": 2,
+                    "priceToBookScore": 3,
+                }
+            ],
             {"rating": "B+", "overall_score": 4, "debt_to_equity_score": 4},
             {},
         ),
@@ -380,14 +409,26 @@ def test_fmp_request_counter_and_daily_tally(monkeypatch, isolated_fmp_usage):
         (
             tools.get_earnings,
             "/earnings",
-            [{
-                "date": "2026-08-01",
-                "epsEstimated": 1.5,
-                "epsActual": None,
-                "revenueEstimated": 100,
-                "revenueActual": None,
-            }],
-            {"earnings": [{"date": "2026-08-01", "eps_estimated": 1.5, "eps_actual": None, "revenue_estimated": 100, "revenue_actual": None}]},
+            [
+                {
+                    "date": "2026-08-01",
+                    "epsEstimated": 1.5,
+                    "epsActual": None,
+                    "revenueEstimated": 100,
+                    "revenueActual": None,
+                }
+            ],
+            {
+                "earnings": [
+                    {
+                        "date": "2026-08-01",
+                        "eps_estimated": 1.5,
+                        "eps_actual": None,
+                        "revenue_estimated": 100,
+                        "revenue_actual": None,
+                    }
+                ]
+            },
             {},
         ),
     ],
@@ -409,10 +450,15 @@ def test_new_bundle_tools_happy_paths(monkeypatch, isolated_fmp_usage, func, pat
 
 
 def test_get_technical_indicator_extracts_latest_row_and_period(monkeypatch, isolated_fmp_usage):
-    fake_http = set_http(monkeypatch, FakeResponse(payload=[
-        {"date": "2026-07-02 00:00:00", "ema": 198.456},
-        {"date": "2026-07-01 00:00:00", "ema": 197.111},
-    ]))
+    fake_http = set_http(
+        monkeypatch,
+        FakeResponse(
+            payload=[
+                {"date": "2026-07-02 00:00:00", "ema": 198.456},
+                {"date": "2026-07-01 00:00:00", "ema": 197.111},
+            ]
+        ),
+    )
 
     result = tools.get_technical_indicator("msft", "ema", period=21)
 
@@ -429,10 +475,17 @@ def test_get_technical_indicator_extracts_latest_row_and_period(monkeypatch, iso
 
 
 def test_get_technical_indicator_standarddeviation_field(monkeypatch, isolated_fmp_usage):
-    set_http(monkeypatch, FakeResponse(payload=[{
-        "date": "2026-07-02",
-        "standardDeviation": 3.456,
-    }]))
+    set_http(
+        monkeypatch,
+        FakeResponse(
+            payload=[
+                {
+                    "date": "2026-07-02",
+                    "standardDeviation": 3.456,
+                }
+            ]
+        ),
+    )
 
     result = tools.get_technical_indicator("msft", "standarddeviation")
 
@@ -522,10 +575,17 @@ def test_new_tools_return_error_for_network_exception(monkeypatch, isolated_fmp_
 
 
 def test_fmp_get_cache_prevents_duplicate_real_request(monkeypatch, isolated_fmp_usage):
-    fake_http = set_http(monkeypatch, FakeResponse(payload=[{
-        "priceToEarningsRatioTTM": 25.0,
-        "priceToBookRatioTTM": 8.0,
-    }]))
+    fake_http = set_http(
+        monkeypatch,
+        FakeResponse(
+            payload=[
+                {
+                    "priceToEarningsRatioTTM": 25.0,
+                    "priceToBookRatioTTM": 8.0,
+                }
+            ]
+        ),
+    )
 
     first = tools.get_valuation_ratios("aapl")
     second = tools.get_valuation_ratios("AAPL")

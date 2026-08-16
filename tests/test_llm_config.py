@@ -56,13 +56,16 @@ def test_create_llm_client_routes_each_provider(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
     monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-key")
 
-    assert llm.create_llm_client(
-        provider="anthropic",
-        model="m",
-        system="s",
-        user_content="u",
-        provider_settings=config.PROVIDER_SETTINGS["anthropic"],
-    ) == "anthropic-client"
+    assert (
+        llm.create_llm_client(
+            provider="anthropic",
+            model="m",
+            system="s",
+            user_content="u",
+            provider_settings=config.PROVIDER_SETTINGS["anthropic"],
+        )
+        == "anthropic-client"
+    )
     anthropic_adapter.assert_called_once_with(
         model="m",
         system="s",
@@ -78,13 +81,16 @@ def test_create_llm_client_routes_each_provider(monkeypatch):
         ("gemini", "gemini-key"),
         ("cerebras", "cerebras-key"),
     ]:
-        assert llm.create_llm_client(
-            provider=provider,
-            model="m",
-            system="s",
-            user_content="u",
-            provider_settings=config.PROVIDER_SETTINGS[provider],
-        ) == "compatible-client"
+        assert (
+            llm.create_llm_client(
+                provider=provider,
+                model="m",
+                system="s",
+                user_content="u",
+                provider_settings=config.PROVIDER_SETTINGS[provider],
+            )
+            == "compatible-client"
+        )
         assert compatible_adapter.call_args.kwargs["api_key"] == expected_key
         assert compatible_adapter.call_args.kwargs["base_url"] == config.PROVIDER_SETTINGS[provider]["base_url"]
 
@@ -96,15 +102,18 @@ def test_create_llm_client_passes_optional_max_tokens(monkeypatch):
     monkeypatch.setattr(llm, "OpenAICompatibleAdapter", compatible_adapter)
     monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-key")
 
-    assert llm.create_llm_client(
-        provider="cerebras",
-        model="m",
-        system="s",
-        user_content="u",
-        provider_settings=config.PROVIDER_SETTINGS["cerebras"],
-        tool_schemas=[],
-        max_tokens=8192,
-    ) == "compatible-client"
+    assert (
+        llm.create_llm_client(
+            provider="cerebras",
+            model="m",
+            system="s",
+            user_content="u",
+            provider_settings=config.PROVIDER_SETTINGS["cerebras"],
+            tool_schemas=[],
+            max_tokens=8192,
+        )
+        == "compatible-client"
+    )
 
     assert compatible_adapter.call_args.kwargs["tool_schemas"] == []
     assert compatible_adapter.call_args.kwargs["max_tokens"] == 8192
@@ -115,13 +124,16 @@ def test_create_llm_client_passes_optional_temperature(monkeypatch):
     monkeypatch.setattr(llm, "OpenAICompatibleAdapter", compatible_adapter)
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 
-    assert llm.create_llm_client(
-        provider="openai",
-        model="m",
-        system="s",
-        user_content="u",
-        provider_settings=config.PROVIDER_SETTINGS["openai"],
-        temperature=0.0,
-    ) == "compatible-client"
+    assert (
+        llm.create_llm_client(
+            provider="openai",
+            model="m",
+            system="s",
+            user_content="u",
+            provider_settings=config.PROVIDER_SETTINGS["openai"],
+            temperature=0.0,
+        )
+        == "compatible-client"
+    )
 
     assert compatible_adapter.call_args.kwargs["temperature"] == 0.0

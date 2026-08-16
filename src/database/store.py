@@ -4,8 +4,8 @@ The agent never reads from here; it writes results after each run.
 The dashboard reads the latest run for display and filtered sets for history.
 """
 
-import os
 import json
+import os
 import sqlite3
 
 from paths import signals_db_path
@@ -47,10 +47,7 @@ def _init(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_column(conn: sqlite3.Connection, column: str, column_type: str) -> None:
-    existing = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(signals)").fetchall()
-    }
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
     if column not in existing:
         conn.execute(f"ALTER TABLE signals ADD COLUMN {column} {column_type}")
 
@@ -62,7 +59,9 @@ def write_signals(signals: list[dict]) -> None:
     conn.executemany(
         """
         INSERT INTO signals
-            (run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model, rules_applied, triggering_rule, temperature, run_elapsed_seconds)
+            (run_date, ticker, signal_type, signal, rationale, data_fetched,
+            entry_price, provider, model, rules_applied, triggering_rule,
+            temperature, run_elapsed_seconds)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
@@ -94,7 +93,9 @@ def read_latest_signals() -> list[dict]:
     _init(conn)
     rows = conn.execute(
         """
-        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model, rules_applied, triggering_rule, temperature, run_elapsed_seconds
+        SELECT run_date, ticker, signal_type, signal, rationale,
+        data_fetched, entry_price, provider, model, rules_applied,
+        triggering_rule, temperature, run_elapsed_seconds
         FROM signals
         WHERE run_date = (SELECT MAX(run_date) FROM signals)
         ORDER BY signal_type, ticker
@@ -117,7 +118,7 @@ def read_filtered_signals(
         return []
 
     clauses = []
-    params  = []
+    params = []
 
     if run_date:
         clauses.append("run_date = ?")
@@ -130,11 +131,13 @@ def read_filtered_signals(
         params.append(ticker.upper().strip())
 
     where = " AND ".join(clauses)
-    conn  = _connect()
+    conn = _connect()
     _init(conn)
-    rows  = conn.execute(
+    rows = conn.execute(
         f"""
-        SELECT run_date, ticker, signal_type, signal, rationale, data_fetched, entry_price, provider, model, rules_applied, triggering_rule, temperature, run_elapsed_seconds
+        SELECT run_date, ticker, signal_type, signal, rationale,
+        data_fetched, entry_price, provider, model, rules_applied,
+        triggering_rule, temperature, run_elapsed_seconds
         FROM signals
         WHERE {where}
         ORDER BY run_date DESC, signal_type, ticker
@@ -149,9 +152,7 @@ def read_run_dates() -> list[str]:
     """Return a distinct list of all run timestamps, newest first."""
     conn = _connect()
     _init(conn)
-    rows = conn.execute(
-        "SELECT DISTINCT run_date FROM signals ORDER BY run_date DESC"
-    ).fetchall()
+    rows = conn.execute("SELECT DISTINCT run_date FROM signals ORDER BY run_date DESC").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
@@ -160,24 +161,22 @@ def read_tickers() -> list[str]:
     """Return a distinct sorted list of all tickers in the database."""
     conn = _connect()
     _init(conn)
-    rows = conn.execute(
-        "SELECT DISTINCT ticker FROM signals ORDER BY ticker ASC"
-    ).fetchall()
+    rows = conn.execute("SELECT DISTINCT ticker FROM signals ORDER BY ticker ASC").fetchall()
     conn.close()
     return [r[0] for r in rows]
 
 
 def _row_to_dict(r: tuple) -> dict:
     return {
-        "run_date":     r[0],
-        "ticker":       r[1],
-        "signal_type":  r[2],
-        "signal":       r[3],
-        "rationale":    r[4],
+        "run_date": r[0],
+        "ticker": r[1],
+        "signal_type": r[2],
+        "signal": r[3],
+        "rationale": r[4],
         "data_fetched": json.loads(r[5]) if r[5] else {},
-        "entry_price":  r[6],
-        "provider":     r[7],
-        "model":        r[8],
+        "entry_price": r[6],
+        "provider": r[7],
+        "model": r[8],
         "rules_applied": r[9],
         "triggering_rule": r[10],
         "temperature": r[11],

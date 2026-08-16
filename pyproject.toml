@@ -1,0 +1,15 @@
+[tool.ruff]
+# increase line-length for E501
+line-length = 120
+
+[tool.ruff.lint]
+# broader set of rules
+select = ["E", "W", "F"]
+
+# ignore the blind-except rule
+ignore = ["BLE001"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/dashboard/app.py" = ["E501"]  # Dashboard will have some long lines
+"tests/test_di4_pipeline_wiring.py" = ["E501"]
+"tests/test_main.py" = ["E501"]

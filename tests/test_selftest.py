@@ -6,10 +6,14 @@ import selftest
 def test_run_selftest_returns_zero_when_fmp_and_llm_pass(monkeypatch):
     output = []
 
-    monkeypatch.setattr(selftest, "_load_env_files", lambda: [
-        selftest.EnvLoad("default .env search", "C:/repo/.env", True, True),
-        selftest.EnvLoad("user app-data .env", "C:/Users/User/AppData/app/.env", False, False),
-    ])
+    monkeypatch.setattr(
+        selftest,
+        "_load_env_files",
+        lambda: [
+            selftest.EnvLoad("default .env search", "C:/repo/.env", True, True),
+            selftest.EnvLoad("user app-data .env", "C:/Users/User/AppData/app/.env", False, False),
+        ],
+    )
     monkeypatch.setattr(
         selftest,
         "_run_fmp_check",

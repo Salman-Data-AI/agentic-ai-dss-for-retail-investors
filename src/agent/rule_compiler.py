@@ -15,7 +15,6 @@ from .rule_sets import validate_rule_set
 from .tool_planner import plan_tools_for_rules
 from .tool_schemas import SUPPORTED_METRIC_KEYS, TOOL_SCHEMA_VERSION
 
-
 COMPILE_PROMPT_VERSION = "compile-prompt-v3"
 _COMPILE_MAX_TOKENS = 4096
 
@@ -27,10 +26,12 @@ one numeric comparison operator, and one numeric threshold.
 Return ONLY a JSON object with exactly this shape:
 {{
   "buy_clauses": [
-    {{"user_phrase": "<original clause>", "bound_metric": "<metric key>", "operator": "<|<=|>|>=|==|!=", "threshold": 0}}
+    {{"user_phrase": "<original clause>", "bound_metric": "<metric key>",
+    "operator": "<|<=|>|>=|==|!=", "threshold": 0}}
   ],
   "sell_clauses": [
-    {{"user_phrase": "<original clause>", "bound_metric": "<metric key>", "operator": "<|<=|>|>=|==|!=", "threshold": 0}}
+    {{"user_phrase": "<original clause>", "bound_metric": "<metric key>",
+    "operator": "<|<=|>|>=|==|!=", "threshold": 0}}
   ],
   "unbound_clauses": [
     {{"side": "buy|sell", "user_phrase": "<original clause>", "reason": "<why no supported metric fits>"}}
@@ -41,7 +42,8 @@ Rules:
 - Use only the supported metric keys described in this metric registry:
 {metric_registry}
 - Do not invent metric keys.
-- Do not silently drop clauses. If a clause cannot be expressed as one supported numeric metric comparison, put it in unbound_clauses.
+- Do not silently drop clauses.
+- If a clause cannot be expressed as one supported numeric metric comparison, put it in unbound_clauses.
 - Percent thresholds are numeric percentages for *_pct metrics.
 - The compile step is pure closed-menu classification; provider and model are excluded from the approval fingerprint.
 """
@@ -111,7 +113,9 @@ def compile_rule_text(
 
     response = client.next_step()
     if response.tool_calls is not None:
-        return _blocked("compile_requested_tools", "Compile requested tools; expected JSON only.", fingerprint=fingerprint)
+        return _blocked(
+            "compile_requested_tools", "Compile requested tools; expected JSON only.", fingerprint=fingerprint
+        )
     if response.error:
         return _blocked("provider_error", response.error, fingerprint=fingerprint)
     if response.final_text is None:
@@ -165,10 +169,12 @@ def parse_compiled_rule_response(text: str, *, fingerprint: str) -> dict[str, An
             unbound_clauses=unbound,
         )
 
-    rule_set = _canonicalize_rule_set({
-        "buy_clauses": candidate.get("buy_clauses"),
-        "sell_clauses": candidate.get("sell_clauses"),
-    })
+    rule_set = _canonicalize_rule_set(
+        {
+            "buy_clauses": candidate.get("buy_clauses"),
+            "sell_clauses": candidate.get("sell_clauses"),
+        }
+    )
     return _validated_result(rule_set, fingerprint=fingerprint, compiler="llm")
 
 
@@ -353,7 +359,9 @@ def _return_metric_key_from_text(text: str) -> str | None:
 
 
 def _mentions_pe_ratio(text: str) -> bool:
-    return any(token in text for token in ("pe ratio", "p/e", "price to earnings", "price-to-earnings")) or bool(re.search(r"\bpe\b", text))
+    return any(token in text for token in ("pe ratio", "p/e", "price to earnings", "price-to-earnings")) or bool(
+        re.search(r"\bpe\b", text)
+    )
 
 
 def _mentions_positive_eps(text: str) -> bool:
@@ -365,7 +373,9 @@ def _mentions_positive_eps(text: str) -> bool:
 def _operator_from_text(text: str) -> str | None:
     if any(token in text for token in ("below", "less than", "under", "dropped more than", "<")):
         return "<"
-    if any(token in text for token in ("above", "greater than", "more than", "over", "expanded above", "up more than", ">")):
+    if any(
+        token in text for token in ("above", "greater than", "more than", "over", "expanded above", "up more than", ">")
+    ):
         return ">"
     return None
 
@@ -387,7 +397,7 @@ def _first_number(text: str) -> float | None:
 
 def _comparison_number(text: str) -> float | None:
     for pattern in (
-        r"(?:below|less than|under|above|greater than|more than|over|expanded above|within|up more than|dropped more than)[^\d-]+(-?\d+(?:\.\d+)?)\s*(billion|million|trillion|%)?",
+        r"(?:below|less than|under|above|greater than|more than|over|expanded above|within|up more than|dropped more than)[^\d-]+(-?\d+(?:\.\d+)?)\s*(billion|million|trillion|%)?",  # noqa: E501
         r"(?:<|>)\s*(-?\d+(?:\.\d+)?)\s*(billion|million|trillion|%)?",
     ):
         match = re.search(pattern, text)
@@ -404,7 +414,7 @@ def _comparison_number(text: str) -> float | None:
     return _first_number(text)
 
 
-def _clause(phrase: str, metric_key: str, operator: str, threshold: float | int) -> dict[str, Any]:
+def _clause(phrase: str, metric_key: str, operator: str, threshold: float) -> dict[str, Any]:
     return {
         "user_phrase": phrase,
         "bound_metric": canonical_metric_key(metric_key),
@@ -472,27 +482,33 @@ def _validate_rule_sources(rule_set: dict[str, Any], *, buy_rules: str, sell_rul
             if not metric:
                 continue
             if evaluation_type not in metric["evaluation_types"]:
-                problems.append({
-                    "path": f"{list_key}[{index}].bound_metric",
-                    "message": f"{metric_key} is not valid for {evaluation_type}.",
-                })
+                problems.append(
+                    {
+                        "path": f"{list_key}[{index}].bound_metric",
+                        "message": f"{metric_key} is not valid for {evaluation_type}.",
+                    }
+                )
             produced_by = set(metric["produced_by"]) - {"holding"}
             if metric.get("requires_all_sources") and not produced_by.issubset(planned_tools):
-                problems.append({
-                    "path": f"{list_key}[{index}].bound_metric",
-                    "message": (
-                        f"{metric_key} requires all of {sorted(produced_by)}, "
-                        f"but planned tools are {sorted(planned_tools)}."
-                    ),
-                })
+                problems.append(
+                    {
+                        "path": f"{list_key}[{index}].bound_metric",
+                        "message": (
+                            f"{metric_key} requires all of {sorted(produced_by)}, "
+                            f"but planned tools are {sorted(planned_tools)}."
+                        ),
+                    }
+                )
             elif produced_by and not produced_by.intersection(planned_tools):
-                problems.append({
-                    "path": f"{list_key}[{index}].bound_metric",
-                    "message": (
-                        f"{metric_key} requires one of {sorted(produced_by)}, "
-                        f"but planned tools are {sorted(planned_tools)}."
-                    ),
-                })
+                problems.append(
+                    {
+                        "path": f"{list_key}[{index}].bound_metric",
+                        "message": (
+                            f"{metric_key} requires one of {sorted(produced_by)}, "
+                            f"but planned tools are {sorted(planned_tools)}."
+                        ),
+                    }
+                )
     return {"valid": not problems, "problems": problems}
 
 

@@ -36,20 +36,24 @@ class FakeNormalizedClient:
 
 def _patch_provider(monkeypatch, provider="anthropic"):
     monkeypatch.setattr(agent_module.config, "PROVIDER", provider)
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        provider: {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
-    })
+    monkeypatch.setattr(
+        agent_module.config, "PROVIDER_SETTINGS", {provider: {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}}
+    )
 
 
 def test_evaluate_signals_from_data_batch_uses_one_no_tool_client(monkeypatch):
-    fake_client = FakeNormalizedClient([
-        LLMResponse(final_text=(
-            '['
-            '{"ticker":"AAPL","signal":"BUY","triggering_rule":"price rule","rationale":"ok","data_fetched":{"price":200}},'
-            '{"ticker":"MSFT","signal":"SKIP","triggering_rule":"price rule not met","rationale":"steady","data_fetched":{"price":300}}'
-            ']'
-        )),
-    ])
+    fake_client = FakeNormalizedClient(
+        [
+            LLMResponse(
+                final_text=(
+                    "["
+                    '{"ticker":"AAPL","signal":"BUY","triggering_rule":"price rule","rationale":"ok","data_fetched":{"price":200}},'  # noqa: E501
+                    '{"ticker":"MSFT","signal":"SKIP","triggering_rule":"price rule not met","rationale":"steady","data_fetched":{"price":300}}'  # noqa: E501
+                    "]"
+                )
+            ),
+        ]
+    )
     create_client = Mock(return_value=fake_client)
 
     monkeypatch.setattr(agent_module, "create_llm_client", create_client)
@@ -77,9 +81,13 @@ def test_evaluate_signals_from_data_batch_uses_one_no_tool_client(monkeypatch):
 
 
 def test_evaluate_signals_from_data_batch_handles_bad_rows(monkeypatch):
-    fake_client = FakeNormalizedClient([
-        LLMResponse(final_text='[{"ticker":"AAPL","signal":"SELL","triggering_rule":"bad rule","rationale":"bad","data_fetched":{}}]'),
-    ])
+    fake_client = FakeNormalizedClient(
+        [
+            LLMResponse(
+                final_text='[{"ticker":"AAPL","signal":"SELL","triggering_rule":"bad rule","rationale":"bad","data_fetched":{}}]'  # noqa: E501
+            ),
+        ]
+    )
 
     monkeypatch.setattr(agent_module, "create_llm_client", Mock(return_value=fake_client))
     _patch_provider(monkeypatch)
@@ -115,7 +123,7 @@ def test_parse_signal_batch_response_requires_triggering_rule():
 def test_parse_signal_batch_response_coerces_malformed_data_fetched():
     result = agent_module._parse_signal_batch_response(
         items=[{"ticker": "AAPL", "fetched_data": {}}],
-        text='[{"ticker":"AAPL","signal":"BUY","triggering_rule":"RSI below 35","rationale":"ok","data_fetched":"bad"}]',
+        text='[{"ticker":"AAPL","signal":"BUY","triggering_rule":"RSI below 35","rationale":"ok","data_fetched":"bad"}]',  # noqa: E501
         contract=agent_module._SIGNAL_CONTRACTS["BUY_EVAL"],
         evaluation_type="BUY_EVAL",
         allowed_signals="BUY | SKIP",
@@ -126,16 +134,20 @@ def test_parse_signal_batch_response_coerces_malformed_data_fetched():
 
 
 def test_anthropic_adapter_preserves_tool_use_message_flow():
-    fake_messages = SimpleNamespace(create=Mock(side_effect=[
-        SimpleNamespace(
-            stop_reason="tool_use",
-            content=[anthropic_tool_block("get_quote", {"ticker": "AAPL"})],
-        ),
-        SimpleNamespace(
-            stop_reason="end_turn",
-            content=[text_block('{"signal":"HOLD","rationale":"ok","data_fetched":{}}')],
-        ),
-    ]))
+    fake_messages = SimpleNamespace(
+        create=Mock(
+            side_effect=[
+                SimpleNamespace(
+                    stop_reason="tool_use",
+                    content=[anthropic_tool_block("get_quote", {"ticker": "AAPL"})],
+                ),
+                SimpleNamespace(
+                    stop_reason="end_turn",
+                    content=[text_block('{"signal":"HOLD","rationale":"ok","data_fetched":{}}')],
+                ),
+            ]
+        )
+    )
     adapter = AnthropicAdapter(
         model="test-model",
         system="system",
@@ -157,10 +169,14 @@ def test_anthropic_adapter_preserves_tool_use_message_flow():
 
 
 def test_anthropic_adapter_sends_temperature_only_when_set():
-    fake_messages = SimpleNamespace(create=Mock(return_value=SimpleNamespace(
-        stop_reason="end_turn",
-        content=[text_block("[]")],
-    )))
+    fake_messages = SimpleNamespace(
+        create=Mock(
+            return_value=SimpleNamespace(
+                stop_reason="end_turn",
+                content=[text_block("[]")],
+            )
+        )
+    )
     adapter = AnthropicAdapter(
         model="test-model",
         system="system",
@@ -176,13 +192,19 @@ def test_anthropic_adapter_sends_temperature_only_when_set():
 
 
 def test_openai_adapter_renders_tools_and_appends_tool_results():
-    fake_create = Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(
-        finish_reason="tool_calls",
-        message=SimpleNamespace(
-            content=None,
-            tool_calls=[openai_tool_call("get_quote", '{"ticker":"AAPL"}')],
-        ),
-    )]))
+    fake_create = Mock(
+        return_value=SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="tool_calls",
+                    message=SimpleNamespace(
+                        content=None,
+                        tool_calls=[openai_tool_call("get_quote", '{"ticker":"AAPL"}')],
+                    ),
+                )
+            ]
+        )
+    )
     adapter = OpenAICompatibleAdapter(
         model="test-model",
         system="system",
@@ -211,13 +233,19 @@ def test_openai_adapter_renders_tools_and_appends_tool_results():
 
 
 def test_openai_adapter_uses_max_completion_tokens_for_openai_models():
-    fake_create = Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(
-        finish_reason="stop",
-        message=SimpleNamespace(
-            content='{"signal":"HOLD","rationale":"ok","data_fetched":{}}',
-            tool_calls=None,
-        ),
-    )]))
+    fake_create = Mock(
+        return_value=SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(
+                        content='{"signal":"HOLD","rationale":"ok","data_fetched":{}}',
+                        tool_calls=None,
+                    ),
+                )
+            ]
+        )
+    )
     adapter = OpenAICompatibleAdapter(
         model="gpt-5.4-nano",
         system="system",
@@ -236,13 +264,19 @@ def test_openai_adapter_uses_max_completion_tokens_for_openai_models():
 
 
 def test_openai_adapter_sends_temperature_only_when_set():
-    fake_create = Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(
-        finish_reason="stop",
-        message=SimpleNamespace(
-            content="[]",
-            tool_calls=None,
-        ),
-    )]))
+    fake_create = Mock(
+        return_value=SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(
+                        content="[]",
+                        tool_calls=None,
+                    ),
+                )
+            ]
+        )
+    )
     adapter = OpenAICompatibleAdapter(
         model="test-model",
         system="system",
@@ -260,13 +294,19 @@ def test_openai_adapter_sends_temperature_only_when_set():
 
 
 def test_openai_adapter_omits_tools_when_no_tool_schemas_are_provided():
-    fake_create = Mock(return_value=SimpleNamespace(choices=[SimpleNamespace(
-        finish_reason="stop",
-        message=SimpleNamespace(
-            content='{"signal":"HOLD","rationale":"ok","data_fetched":{}}',
-            tool_calls=None,
-        ),
-    )]))
+    fake_create = Mock(
+        return_value=SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(
+                        content='{"signal":"HOLD","rationale":"ok","data_fetched":{}}',
+                        tool_calls=None,
+                    ),
+                )
+            ]
+        )
+    )
     adapter = OpenAICompatibleAdapter(
         model="test-model",
         system="system",
@@ -296,9 +336,11 @@ def test_error_contract():
 
 
 def test_flatten_metrics_derives_volume_vs_average_pct():
-    metrics = agent_module._flatten_metrics({
-        "get_quote": {"volume": 1_500_000},
-        "get_profile": {"average_volume": 1_000_000},
-    })
+    metrics = agent_module._flatten_metrics(
+        {
+            "get_quote": {"volume": 1_500_000},
+            "get_profile": {"average_volume": 1_000_000},
+        }
+    )
 
     assert metrics["volume_vs_average_pct"] == 50.0

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 _LEGACY_SIGNAL_MAP = {
     "BUY_EVAL": {
         "BUY": "BUY",
@@ -66,17 +65,19 @@ def build_history_rows(results: list[dict]) -> list[dict]:
     rows = []
     for s in [normalize_signal_for_display(signal) for signal in results]:
         name = s.get("data_fetched", {}).get("name") or s["ticker"]
-        rows.append({
-            "Run date": s["run_date"],
-            "Duration": _format_duration(s.get("run_elapsed_seconds")),
-            "Ticker": s["ticker"],
-            "Company": name,
-            "Type": "BUY eval" if s["signal_type"] == "BUY_EVAL" else "SELL eval",
-            "Signal": s["signal"],
-            "Provider": s.get("provider") or "",
-            "Model": s.get("model") or "",
-            "Rationale": s.get("rationale") or "",
-        })
+        rows.append(
+            {
+                "Run date": s["run_date"],
+                "Duration": _format_duration(s.get("run_elapsed_seconds")),
+                "Ticker": s["ticker"],
+                "Company": name,
+                "Type": "BUY eval" if s["signal_type"] == "BUY_EVAL" else "SELL eval",
+                "Signal": s["signal"],
+                "Provider": s.get("provider") or "",
+                "Model": s.get("model") or "",
+                "Rationale": s.get("rationale") or "",
+            }
+        )
     return rows
 
 
@@ -94,12 +95,14 @@ def build_rule_clause_rows(rule_set: dict | None, clause_key: str) -> list[dict]
             continue
         operator = clause.get("operator", "")
         threshold = clause.get("threshold", "")
-        rows.append({
-            "#": index,
-            "User phrase": clause.get("user_phrase", ""),
-            "Bound metric": clause.get("bound_metric", ""),
-            "Enforced check": f"{operator} {threshold}".strip(),
-        })
+        rows.append(
+            {
+                "#": index,
+                "User phrase": clause.get("user_phrase", ""),
+                "Bound metric": clause.get("bound_metric", ""),
+                "Enforced check": f"{operator} {threshold}".strip(),
+            }
+        )
     return rows
 
 
@@ -167,11 +170,8 @@ def chunk_metrics(data: dict, per_row: int = 4) -> list[list[tuple[str, str]]]:
     """
     if per_row < 1:
         raise ValueError("per_row must be at least 1")
-    items = [
-        (key.replace("_", " ").title(), format_metric_value(value))
-        for key, value in data.items()
-    ]
-    return [items[i:i + per_row] for i in range(0, len(items), per_row)]
+    items = [(key.replace("_", " ").title(), format_metric_value(value)) for key, value in data.items()]
+    return [items[i : i + per_row] for i in range(0, len(items), per_row)]
 
 
 def _format_duration(seconds) -> str:

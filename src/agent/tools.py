@@ -14,6 +14,7 @@ from datetime import date
 
 import requests
 from dotenv import load_dotenv
+
 from paths import executable_env_path, fmp_usage_path, user_env_path
 
 load_dotenv()
@@ -87,9 +88,7 @@ def get_fmp_usage_path() -> str:
 
 def _cache_key(path: str, params: dict) -> tuple:
     symbol = str(params.get("symbol", "")).upper().strip()
-    normalized_params = tuple(sorted(
-        (key, str(value)) for key, value in params.items() if key != "apikey"
-    ))
+    normalized_params = tuple(sorted((key, str(value)) for key, value in params.items() if key != "apikey"))
     return (path, symbol, normalized_params)
 
 
@@ -215,10 +214,12 @@ def get_rsi(ticker: str, period: int = 14) -> dict:
     """
     try:
         symbol = ticker.upper().strip()
-        row = _first_row(_fmp_get(
-            "/technical-indicators/rsi",
-            {"symbol": symbol, "periodLength": period, "timeframe": "1day"},
-        ))
+        row = _first_row(
+            _fmp_get(
+                "/technical-indicators/rsi",
+                {"symbol": symbol, "periodLength": period, "timeframe": "1day"},
+            )
+        )
         if row.get("rsi") is None:
             return {"error": f"RSI unavailable for {ticker}"}
         return {
@@ -238,10 +239,12 @@ def get_sma(ticker: str, period: int = 50) -> dict:
     """
     try:
         symbol = ticker.upper().strip()
-        row = _first_row(_fmp_get(
-            "/technical-indicators/sma",
-            {"symbol": symbol, "periodLength": period, "timeframe": "1day"},
-        ))
+        row = _first_row(
+            _fmp_get(
+                "/technical-indicators/sma",
+                {"symbol": symbol, "periodLength": period, "timeframe": "1day"},
+            )
+        )
         if row.get("sma") is None:
             return {"error": f"SMA unavailable for {ticker}"}
         return {
@@ -279,19 +282,24 @@ def get_key_metrics(ticker: str) -> dict:
 def get_valuation_ratios(ticker: str) -> dict:
     """Valuation, leverage, liquidity, and margin ratios from ratios TTM."""
     try:
-        return _bundle_row(ticker, "/ratios-ttm", {}, {
-            "priceToEarningsRatioTTM": "pe_ratio_ttm",
-            "priceToBookRatioTTM": "price_to_book_ttm",
-            "priceToSalesRatioTTM": "price_to_sales_ttm",
-            "priceToEarningsGrowthRatioTTM": "peg_ratio_ttm",
-            "debtToEquityRatioTTM": "debt_to_equity_ttm",
-            "currentRatioTTM": "current_ratio_ttm",
-            "quickRatioTTM": "quick_ratio_ttm",
-            "interestCoverageRatioTTM": "interest_coverage_ttm",
-            "grossProfitMarginTTM": "gross_profit_margin_ttm",
-            "netProfitMarginTTM": "net_profit_margin_ttm",
-            "operatingProfitMarginTTM": "operating_profit_margin_ttm",
-        })
+        return _bundle_row(
+            ticker,
+            "/ratios-ttm",
+            {},
+            {
+                "priceToEarningsRatioTTM": "pe_ratio_ttm",
+                "priceToBookRatioTTM": "price_to_book_ttm",
+                "priceToSalesRatioTTM": "price_to_sales_ttm",
+                "priceToEarningsGrowthRatioTTM": "peg_ratio_ttm",
+                "debtToEquityRatioTTM": "debt_to_equity_ttm",
+                "currentRatioTTM": "current_ratio_ttm",
+                "quickRatioTTM": "quick_ratio_ttm",
+                "interestCoverageRatioTTM": "interest_coverage_ttm",
+                "grossProfitMarginTTM": "gross_profit_margin_ttm",
+                "netProfitMarginTTM": "net_profit_margin_ttm",
+                "operatingProfitMarginTTM": "operating_profit_margin_ttm",
+            },
+        )
     except Exception as e:
         return {"error": f"Valuation ratios fetch failed for {ticker}: {e}"}
 
@@ -299,16 +307,21 @@ def get_valuation_ratios(ticker: str) -> dict:
 def get_financial_health(ticker: str) -> dict:
     """Profitability, capital efficiency, and debt coverage from key metrics TTM."""
     try:
-        return _bundle_row(ticker, "/key-metrics-ttm", {}, {
-            "returnOnEquityTTM": "return_on_equity_ttm",
-            "returnOnAssetsTTM": "return_on_assets_ttm",
-            "returnOnInvestedCapitalTTM": "return_on_invested_capital_ttm",
-            "evToEBITDATTM": "ev_to_ebitda_ttm",
-            "freeCashFlowYieldTTM": "free_cash_flow_yield_ttm",
-            "earningsYieldTTM": "earnings_yield_ttm",
-            "netDebtToEBITDATTM": "net_debt_to_ebitda_ttm",
-            "grahamNumberTTM": "graham_number_ttm",
-        })
+        return _bundle_row(
+            ticker,
+            "/key-metrics-ttm",
+            {},
+            {
+                "returnOnEquityTTM": "return_on_equity_ttm",
+                "returnOnAssetsTTM": "return_on_assets_ttm",
+                "returnOnInvestedCapitalTTM": "return_on_invested_capital_ttm",
+                "evToEBITDATTM": "ev_to_ebitda_ttm",
+                "freeCashFlowYieldTTM": "free_cash_flow_yield_ttm",
+                "earningsYieldTTM": "earnings_yield_ttm",
+                "netDebtToEBITDATTM": "net_debt_to_ebitda_ttm",
+                "grahamNumberTTM": "graham_number_ttm",
+            },
+        )
     except Exception as e:
         return {"error": f"Financial health fetch failed for {ticker}: {e}"}
 
@@ -316,16 +329,21 @@ def get_financial_health(ticker: str) -> dict:
 def get_income_statement(ticker: str) -> dict:
     """Latest annual income statement metrics."""
     try:
-        return _bundle_row(ticker, "/income-statement", {"period": "annual", "limit": 1}, {
-            "revenue": "revenue",
-            "grossProfit": "gross_profit",
-            "ebitda": "ebitda",
-            "operatingIncome": "operating_income",
-            "netIncome": "net_income",
-            "eps": "eps",
-            "epsDiluted": "eps_diluted",
-            "fiscalYear": "fiscal_year",
-        })
+        return _bundle_row(
+            ticker,
+            "/income-statement",
+            {"period": "annual", "limit": 1},
+            {
+                "revenue": "revenue",
+                "grossProfit": "gross_profit",
+                "ebitda": "ebitda",
+                "operatingIncome": "operating_income",
+                "netIncome": "net_income",
+                "eps": "eps",
+                "epsDiluted": "eps_diluted",
+                "fiscalYear": "fiscal_year",
+            },
+        )
     except Exception as e:
         return {"error": f"Income statement fetch failed for {ticker}: {e}"}
 
@@ -333,15 +351,20 @@ def get_income_statement(ticker: str) -> dict:
 def get_balance_sheet(ticker: str) -> dict:
     """Latest annual balance sheet metrics."""
     try:
-        return _bundle_row(ticker, "/balance-sheet-statement", {"period": "annual", "limit": 1}, {
-            "totalAssets": "total_assets",
-            "totalCurrentAssets": "total_current_assets",
-            "totalCurrentLiabilities": "total_current_liabilities",
-            "longTermDebt": "long_term_debt",
-            "shortTermDebt": "short_term_debt",
-            "cashAndShortTermInvestments": "cash_and_short_term_investments",
-            "inventory": "inventory",
-        })
+        return _bundle_row(
+            ticker,
+            "/balance-sheet-statement",
+            {"period": "annual", "limit": 1},
+            {
+                "totalAssets": "total_assets",
+                "totalCurrentAssets": "total_current_assets",
+                "totalCurrentLiabilities": "total_current_liabilities",
+                "longTermDebt": "long_term_debt",
+                "shortTermDebt": "short_term_debt",
+                "cashAndShortTermInvestments": "cash_and_short_term_investments",
+                "inventory": "inventory",
+            },
+        )
     except Exception as e:
         return {"error": f"Balance sheet fetch failed for {ticker}: {e}"}
 
@@ -349,13 +372,18 @@ def get_balance_sheet(ticker: str) -> dict:
 def get_cash_flow(ticker: str) -> dict:
     """Latest annual cash flow metrics."""
     try:
-        return _bundle_row(ticker, "/cash-flow-statement", {"period": "annual", "limit": 1}, {
-            "netCashProvidedByOperatingActivities": "operating_cash_flow",
-            "investmentsInPropertyPlantAndEquipment": "capital_expenditures",
-            "netDividendsPaid": "net_dividends_paid",
-            "commonStockRepurchased": "common_stock_repurchased",
-            "netChangeInCash": "net_change_in_cash",
-        })
+        return _bundle_row(
+            ticker,
+            "/cash-flow-statement",
+            {"period": "annual", "limit": 1},
+            {
+                "netCashProvidedByOperatingActivities": "operating_cash_flow",
+                "investmentsInPropertyPlantAndEquipment": "capital_expenditures",
+                "netDividendsPaid": "net_dividends_paid",
+                "commonStockRepurchased": "common_stock_repurchased",
+                "netChangeInCash": "net_change_in_cash",
+            },
+        )
     except Exception as e:
         return {"error": f"Cash flow fetch failed for {ticker}: {e}"}
 
@@ -363,17 +391,22 @@ def get_cash_flow(ticker: str) -> dict:
 def get_performance(ticker: str) -> dict:
     """Trailing stock returns over common horizons."""
     try:
-        return _bundle_row(ticker, "/stock-price-change", {}, {
-            "1D": "return_1d",
-            "5D": "return_5d",
-            "1M": "return_1m",
-            "3M": "return_3m",
-            "6M": "return_6m",
-            "ytd": "return_ytd",
-            "1Y": "return_1y",
-            "3Y": "return_3y",
-            "5Y": "return_5y",
-        })
+        return _bundle_row(
+            ticker,
+            "/stock-price-change",
+            {},
+            {
+                "1D": "return_1d",
+                "5D": "return_5d",
+                "1M": "return_1m",
+                "3M": "return_3m",
+                "6M": "return_6m",
+                "ytd": "return_ytd",
+                "1Y": "return_1y",
+                "3Y": "return_3y",
+                "5Y": "return_5y",
+            },
+        )
     except Exception as e:
         return {"error": f"Performance fetch failed for {ticker}: {e}"}
 
@@ -381,19 +414,24 @@ def get_performance(ticker: str) -> dict:
 def get_profile(ticker: str) -> dict:
     """Company profile, risk, market cap, volume, and listing classification."""
     try:
-        return _bundle_row(ticker, "/profile", {}, {
-            "beta": "beta",
-            "sector": "sector",
-            "industry": "industry",
-            "exchange": "exchange",
-            "marketCap": "market_cap",
-            "averageVolume": "average_volume",
-            "isEtf": "is_etf",
-            "isFund": "is_fund",
-            "isAdr": "is_adr",
-            "ipoDate": "ipo_date",
-            "lastDividend": "last_dividend",
-        })
+        return _bundle_row(
+            ticker,
+            "/profile",
+            {},
+            {
+                "beta": "beta",
+                "sector": "sector",
+                "industry": "industry",
+                "exchange": "exchange",
+                "marketCap": "market_cap",
+                "averageVolume": "average_volume",
+                "isEtf": "is_etf",
+                "isFund": "is_fund",
+                "isAdr": "is_adr",
+                "ipoDate": "ipo_date",
+                "lastDividend": "last_dividend",
+            },
+        )
     except Exception as e:
         return {"error": f"Profile fetch failed for {ticker}: {e}"}
 
@@ -411,10 +449,12 @@ def get_technical_indicator(ticker: str, indicator: str, period: int = 14) -> di
         if normalized not in indicator_fields:
             return {"error": f"Unsupported technical indicator: {indicator}"}
         symbol = _clean_symbol(ticker)
-        row = _first_row(_fmp_get(
-            f"/technical-indicators/{normalized}",
-            {"symbol": symbol, "periodLength": period, "timeframe": "1day"},
-        ))
+        row = _first_row(
+            _fmp_get(
+                f"/technical-indicators/{normalized}",
+                {"symbol": symbol, "periodLength": period, "timeframe": "1day"},
+            )
+        )
         value = row.get(indicator_fields[normalized])
         if value is None:
             return {"error": f"{indicator} unavailable for {ticker}"}
@@ -432,12 +472,17 @@ def get_technical_indicator(ticker: str, indicator: str, period: int = 14) -> di
 def get_price_target(ticker: str) -> dict:
     """Analyst price target consensus range."""
     try:
-        return _bundle_row(ticker, "/price-target-consensus", {}, {
-            "targetHigh": "target_high",
-            "targetLow": "target_low",
-            "targetConsensus": "target_consensus",
-            "targetMedian": "target_median",
-        })
+        return _bundle_row(
+            ticker,
+            "/price-target-consensus",
+            {},
+            {
+                "targetHigh": "target_high",
+                "targetLow": "target_low",
+                "targetConsensus": "target_consensus",
+                "targetMedian": "target_median",
+            },
+        )
     except Exception as e:
         return {"error": f"Price target fetch failed for {ticker}: {e}"}
 
@@ -445,16 +490,21 @@ def get_price_target(ticker: str) -> dict:
 def get_analyst_rating(ticker: str) -> dict:
     """Analyst rating snapshot and component scores."""
     try:
-        return _bundle_row(ticker, "/ratings-snapshot", {}, {
-            "rating": "rating",
-            "overallScore": "overall_score",
-            "discountedCashFlowScore": "discounted_cash_flow_score",
-            "returnOnEquityScore": "return_on_equity_score",
-            "returnOnAssetsScore": "return_on_assets_score",
-            "debtToEquityScore": "debt_to_equity_score",
-            "priceToEarningsScore": "price_to_earnings_score",
-            "priceToBookScore": "price_to_book_score",
-        })
+        return _bundle_row(
+            ticker,
+            "/ratings-snapshot",
+            {},
+            {
+                "rating": "rating",
+                "overallScore": "overall_score",
+                "discountedCashFlowScore": "discounted_cash_flow_score",
+                "returnOnEquityScore": "return_on_equity_score",
+                "returnOnAssetsScore": "return_on_assets_score",
+                "debtToEquityScore": "debt_to_equity_score",
+                "priceToEarningsScore": "price_to_earnings_score",
+                "priceToBookScore": "price_to_book_score",
+            },
+        )
     except Exception as e:
         return {"error": f"Analyst rating fetch failed for {ticker}: {e}"}
 
@@ -462,13 +512,18 @@ def get_analyst_rating(ticker: str) -> dict:
 def get_analyst_estimates(ticker: str) -> dict:
     """Latest annual analyst estimates."""
     try:
-        return _bundle_row(ticker, "/analyst-estimates", {"period": "annual"}, {
-            "date": "date",
-            "revenueAvg": "revenue_avg",
-            "epsAvg": "eps_avg",
-            "ebitdaAvg": "ebitda_avg",
-            "numAnalystsEps": "num_analysts_eps",
-        })
+        return _bundle_row(
+            ticker,
+            "/analyst-estimates",
+            {"period": "annual"},
+            {
+                "date": "date",
+                "revenueAvg": "revenue_avg",
+                "epsAvg": "eps_avg",
+                "ebitdaAvg": "ebitda_avg",
+                "numAnalystsEps": "num_analysts_eps",
+            },
+        )
     except Exception as e:
         return {"error": f"Analyst estimates fetch failed for {ticker}: {e}"}
 
@@ -476,12 +531,18 @@ def get_analyst_estimates(ticker: str) -> dict:
 def get_earnings(ticker: str) -> dict:
     """Past and upcoming earnings rows for one ticker."""
     try:
-        return _bundle_rows(ticker, "/earnings", {}, {
-            "date": "date",
-            "epsEstimated": "eps_estimated",
-            "epsActual": "eps_actual",
-            "revenueEstimated": "revenue_estimated",
-            "revenueActual": "revenue_actual",
-        }, "earnings")
+        return _bundle_rows(
+            ticker,
+            "/earnings",
+            {},
+            {
+                "date": "date",
+                "epsEstimated": "eps_estimated",
+                "epsActual": "eps_actual",
+                "revenueEstimated": "revenue_estimated",
+                "revenueActual": "revenue_actual",
+            },
+            "earnings",
+        )
     except Exception as e:
         return {"error": f"Earnings fetch failed for {ticker}: {e}"}

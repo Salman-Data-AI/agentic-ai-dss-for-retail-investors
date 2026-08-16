@@ -16,7 +16,6 @@ from agent.tool_planner import plan_tools_for_rules
 from paths import executable_env_path, user_env_path
 from settings import load_settings
 
-
 load_dotenv()
 load_dotenv(user_env_path(), override=False)
 exe_env = executable_env_path()
@@ -53,12 +52,14 @@ def measure_consistency(tickers: list[str], runs: int, rules: str, model: str) -
     by_ticker = defaultdict(list)
     for run_index, rows in enumerate(evaluations, start=1):
         for row in rows:
-            by_ticker[row["ticker"]].append({
-                "run": run_index,
-                "signal": row.get("signal"),
-                "rationale": row.get("rationale"),
-                "triggering_rule": row.get("triggering_rule"),
-            })
+            by_ticker[row["ticker"]].append(
+                {
+                    "run": run_index,
+                    "signal": row.get("signal"),
+                    "rationale": row.get("rationale"),
+                    "triggering_rule": row.get("triggering_rule"),
+                }
+            )
 
     per_ticker = {}
     disagreements = {}

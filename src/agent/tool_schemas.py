@@ -4,9 +4,6 @@ Each entry tells Claude what a tool does and what arguments it accepts.
 Keep descriptions precise — Claude uses them to decide when to call each tool.
 """
 
-from .metric_registry import SUPPORTED_METRIC_KEYS
-
-
 TOOL_SCHEMA_VERSION = "tool-schemas-v3"
 
 TOOL_SCHEMAS = [

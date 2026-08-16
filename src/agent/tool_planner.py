@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,18 @@ def plan_tools_with_diagnostics(rules: str) -> PlannedToolsDiagnostics:
         if not any(tool.name == name and tool.args == args for tool in planned):
             planned.append(PlannedTool(name, args))
 
-    if _mentions_any(text, "current price", "price", "52 week", "52-week", "week high", "week low", "volume", "market cap", "large cap"):
+    if _mentions_any(
+        text,
+        "current price",
+        "price",
+        "52 week",
+        "52-week",
+        "week high",
+        "week low",
+        "volume",
+        "market cap",
+        "large cap",
+    ):
         add("get_quote")
     if _mentions_any(text, "rsi", "oversold", "overbought"):
         add("get_rsi", period=_period_near(text, "rsi", default=14))
@@ -80,13 +91,41 @@ def plan_tools_with_diagnostics(rules: str) -> PlannedToolsDiagnostics:
         add("get_financial_health")
     if _mentions_any(text, "revenue", "gross profit", "ebitda", "operating income", "net income", "income statement"):
         add("get_income_statement")
-    if _mentions_any(text, "balance sheet", "assets", "liabilities", "long term debt", "long-term debt", "cash position", "inventory"):
+    if _mentions_any(
+        text, "balance sheet", "assets", "liabilities", "long term debt", "long-term debt", "cash position", "inventory"
+    ):
         add("get_balance_sheet")
-    if _mentions_any(text, "cash flow", "free cash flow", "capex", "capital expenditure", "dividend", "buyback", "cash burn"):
+    if _mentions_any(
+        text, "cash flow", "free cash flow", "capex", "capital expenditure", "dividend", "buyback", "cash burn"
+    ):
         add("get_cash_flow")
-    if _mentions_any(text, "performance", "momentum", "relative strength", "return", "returns", "drawdown", "rebound", "underperformance"):
+    if _mentions_any(
+        text,
+        "performance",
+        "momentum",
+        "relative strength",
+        "return",
+        "returns",
+        "drawdown",
+        "rebound",
+        "underperformance",
+    ):
         add("get_performance")
-    if _mentions_any(text, "profile", "beta", "sector", "industry", "exchange", "etf", "fund", "adr", "ipo", "average volume", "last dividend", "large cap"):
+    if _mentions_any(
+        text,
+        "profile",
+        "beta",
+        "sector",
+        "industry",
+        "exchange",
+        "etf",
+        "fund",
+        "adr",
+        "ipo",
+        "average volume",
+        "last dividend",
+        "large cap",
+    ):
         add("get_profile")
     if "volume" in text and "average" in text:
         add("get_profile")
@@ -97,12 +136,29 @@ def plan_tools_with_diagnostics(rules: str) -> PlannedToolsDiagnostics:
     if _mentions_any(text, "williams"):
         add("get_technical_indicator", indicator="williams", period=_period_near(text, "williams", default=14))
     if _mentions_any(text, "standard deviation", "volatility"):
-        add("get_technical_indicator", indicator="standarddeviation", period=_period_near(text, "standard deviation", default=14))
-    if _mentions_any(text, "price target", "target price", "consensus target", "median target", "analyst upside", "analyst downside"):
+        add(
+            "get_technical_indicator",
+            indicator="standarddeviation",
+            period=_period_near(text, "standard deviation", default=14),
+        )
+    if _mentions_any(
+        text, "price target", "target price", "consensus target", "median target", "analyst upside", "analyst downside"
+    ):
         add("get_price_target")
-    if _mentions_any(text, "analyst rating", "rating", "scorecard", "quality score", "valuation score", "overall score", "analyst score"):
+    if _mentions_any(
+        text,
+        "analyst rating",
+        "rating",
+        "scorecard",
+        "quality score",
+        "valuation score",
+        "overall score",
+        "analyst score",
+    ):
         add("get_analyst_rating")
-    if _mentions_any(text, "analyst estimate", "analyst estimates", "forward estimate", "expected eps", "expected revenue"):
+    if _mentions_any(
+        text, "analyst estimate", "analyst estimates", "forward estimate", "expected eps", "expected revenue"
+    ):
         add("get_analyst_estimates")
     if _mentions_any(text, "earnings date", "earnings surprise", "upcoming earnings", "eps beat", "eps miss"):
         add("get_earnings")

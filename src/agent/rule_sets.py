@@ -27,7 +27,6 @@ from __future__ import annotations
 from numbers import Real
 from typing import Any
 
-
 ALLOWED_OPERATORS = frozenset({"<", "<=", ">", ">=", "==", "!="})
 CLAUSE_LIST_KEYS = ("buy_clauses", "sell_clauses")
 REQUIRED_CLAUSE_KEYS = frozenset({"user_phrase", "bound_metric", "operator", "threshold"})
@@ -44,10 +43,12 @@ def validate_rule_set(candidate: dict[str, Any], allowed_metric_keys: set[str]) 
         }
 
     if not isinstance(allowed_metric_keys, set) or not all(isinstance(key, str) for key in allowed_metric_keys):
-        problems.append({
-            "path": "allowed_metric_keys",
-            "message": "Allowed metric keys must be supplied as a set of strings.",
-        })
+        problems.append(
+            {
+                "path": "allowed_metric_keys",
+                "message": "Allowed metric keys must be supplied as a set of strings.",
+            }
+        )
 
     total_clauses = 0
     for list_key in CLAUSE_LIST_KEYS:
@@ -62,10 +63,12 @@ def validate_rule_set(candidate: dict[str, Any], allowed_metric_keys: set[str]) 
             problems.extend(_validate_clause(clause, allowed_metric_keys, path))
 
     if total_clauses == 0:
-        problems.append({
-            "path": "$",
-            "message": "Rule set must include at least one BUY or SELL clause.",
-        })
+        problems.append(
+            {
+                "path": "$",
+                "message": "Rule set must include at least one BUY or SELL clause.",
+            }
+        )
 
     return {"valid": not problems, "problems": problems}
 
