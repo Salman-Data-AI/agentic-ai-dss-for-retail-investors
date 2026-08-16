@@ -9,11 +9,11 @@ from typing import Any
 import config
 
 from .llm import create_llm_client
-from .metric_registry import METRIC_REGISTRY, canonical_metric_key, metric_prompt_menu
+from .metric_registry import METRIC_REGISTRY, SUPPORTED_METRIC_KEYS, canonical_metric_key, metric_prompt_menu
 from .rule_fingerprint import fingerprint_rule_inputs
 from .rule_sets import validate_rule_set
 from .tool_planner import plan_tools_for_rules
-from .tool_schemas import SUPPORTED_METRIC_KEYS, TOOL_SCHEMA_VERSION
+from .tool_schemas import TOOL_SCHEMA_VERSION
 
 COMPILE_PROMPT_VERSION = "compile-prompt-v3"
 _COMPILE_MAX_TOKENS = 4096

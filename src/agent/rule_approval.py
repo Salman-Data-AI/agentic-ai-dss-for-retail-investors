@@ -15,7 +15,7 @@ from settings import (
 
 from .rule_compiler import compile_rule_text, current_rule_fingerprint
 from .rule_sets import validate_rule_set
-from .tool_schemas import SUPPORTED_METRIC_KEYS
+from .metric_registry import SUPPORTED_METRIC_KEYS
 
 
 def prepare_rule_set(settings: dict[str, Any]) -> dict[str, Any]:
