@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 import main as pipeline
 import settings
 import agent.agent as agent_module
@@ -14,6 +16,17 @@ class FixedDateTime:
     def strftime(self, fmt):
         assert fmt == "%Y-%m-%d %H:%M:%S"
         return "2026-07-02 12:34:56"
+
+
+def test_main_and_rule_modules_import_cleanly():
+    for module_name in (
+        "main",
+        "agent.agent",
+        "agent.rule_compiler",
+        "agent.rule_approval",
+        "agent.rule_sets",
+    ):
+        importlib.import_module(module_name)
 
 
 def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypatch):
@@ -34,7 +47,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
         fetched.append({"ticker": ticker, "plan": plan})
         return {"get_quote": {"ticker": ticker, "name": f"{ticker} Corp"}}
 
-    def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
+    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type):
         calls.append(
             {
                 "items": items,
@@ -149,7 +162,7 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     calls = []
     written = []
 
-    def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
+    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type):
         calls.append(
             {
                 "tickers": [item["ticker"] for item in items],
@@ -220,7 +233,7 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     calls = []
     written = []
 
-    def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
+    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type):
         calls.extend(item["ticker"] for item in items)
         return [
             {

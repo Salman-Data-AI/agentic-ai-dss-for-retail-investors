@@ -29,7 +29,7 @@ For each stock, it returns:
 
 - A signal: `BUY` or `SKIP` for watchlist stocks; `SELL` or `HOLD` for portfolio stocks; or `ERROR` if evaluation fails.
 - A rationale explaining why that signal was generated.
-- The model-reported rule or nearest rule criterion that drove the signal.
+- The code-derived rule or nearest rule criterion that drove the signal.
 - The specific data points used during evaluation.
 
 Example data points include:
@@ -77,7 +77,7 @@ The system then:
 4. Warns in the console if a rule set maps only to the quote fallback rather than a specific metric tool.
 5. Fetches the planned data for each ticker using local market-data tools.
 6. Evaluates watchlist tickers in one BUY batch and portfolio holdings in one SELL batch.
-7. Produces a structured signal, rationale, compact data summary, and model-reported `triggering_rule`.
+7. Produces a structured signal, rationale, compact data summary, and code-derived `triggering_rule`.
 8. Saves the result in a local SQLite database with the exact `rules_applied` for that row.
 9. Displays the latest results in a Streamlit dashboard.
 
@@ -97,7 +97,7 @@ The output helps the user identify whether an existing holding may meet exit, pr
 
 ### Rule-Based Data Selection
 
-The system does not fetch every available metric by default. A deterministic rule planner reads the user's rules and selects which tools are needed before the LLM evaluates the prefetched data.
+The system does not fetch every available metric by default. A deterministic rule planner reads the user's rules and selects which tools are needed before code evaluates the prefetched data and the LLM explains the result.
 
 For example:
 
@@ -120,11 +120,11 @@ The app tracks FMP request usage locally and uses an in-memory per-run cache so 
 
 Each signal includes a rationale that explains the market meaning of the data, not only whether a threshold passed or failed.
 
-The explanation is intended to help a retail investor understand why the system produced its recommendation. The LLM is also required to return `triggering_rule`, which is the rule it reports as governing the signal. This is an explanation and auditability aid, not an independent proof that the correct rule fired.
+The explanation is intended to help a retail investor understand why the system produced its recommendation. The deterministic evaluator supplies `triggering_rule`, which records the approved rule clause or nearest criterion governing the signal.
 
 ### Audit Logging
 
-Every run is written to a local SQLite database. The stored record includes the ticker, signal type, signal, rationale, model-reported triggering rule, data used, entry price when relevant, provider, model, optional temperature, exact rules applied, run timestamp, and run elapsed time.
+Every run is written to a local SQLite database. The stored record includes the ticker, signal type, signal, rationale, code-derived triggering rule, data used, entry price when relevant, provider, model, optional temperature, exact rules applied, run timestamp, and run elapsed time.
 
 This makes it possible to review the latest analysis and preserve a history of generated recommendations. Storing `rules_applied` means a later edit to BUY or SELL rules does not change the audit context for older rows.
 
@@ -195,9 +195,9 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - Fetch broader valuation, financial-health, annual statement, performance, profile, analyst, and earnings data through FMP bundle tools.
 - Fetch RSI, SMA, and selected technical indicators from FMP server-side endpoints.
 - Produce plain-English rationales.
-- Store signals, exact applied rules, model-reported triggering rules, provider/model, optional temperature, and run timing in SQLite.
+- Store signals, exact applied rules, code-derived triggering rules, provider/model, optional temperature, and run timing in SQLite.
 - Display latest results in a Streamlit dashboard.
-- Provide a developer consistency-check script that measures signal stability across repeated LLM evaluations of identical fetched inputs.
+- Provide a developer consistency-check script that measures signal stability across repeated deterministic evaluations of identical fetched inputs.
 
 ## Limitations
 
@@ -208,9 +208,8 @@ The system separates configuration, agent logic, tools, storage, and presentatio
 - FMP free-tier request limits apply; the app tracks local daily usage and uses per-run caching, but each unique endpoint/ticker/parameter request can still consume quota.
 - Annual fundamentals are supported. Quarterly fundamentals are not requested because free-tier endpoints can return plan-gating errors.
 - The Metrics Reference tab is static guidance for rule writing. Its AAPL snapshot values should not be interpreted as current market data after the documented fetch time.
-- It relies on the AI model's interpretation of the user's rules.
-- `triggering_rule` is reported by the model and validated for presence, not independently verified for correctness.
-- Lower temperature can reduce variation, but it does not make outputs deterministic or prove signal correctness.
+- Ambiguous rules may require compile-time binding support before they can be approved.
+- Lower temperature can reduce rationale wording variation, but it does not affect signal correctness.
 - Ambiguous or contradictory rules can lead to weaker recommendations.
 - It fetches ticker data with a small worker pool and then evaluates BUY and SELL groups in batches.
 - The dashboard currently displays the latest run rather than full historical analytics.

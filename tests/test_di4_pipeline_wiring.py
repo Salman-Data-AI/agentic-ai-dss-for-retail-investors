@@ -10,6 +10,7 @@ import agent.rule_compiler as compiler
 import agent.rule_approval as approval
 import settings
 from agent.llm import LLMResponse
+from agent.tool_planner import plan_tools_for_rules
 
 
 class FakeClient:
@@ -426,3 +427,24 @@ def test_deterministic_error_names_missing_clause_metric():
 
     assert result[0]["signal"] == "ERROR"
     assert "EPS should be positive [eps]: Metric is missing." in result[0]["rationale"]
+
+
+def test_unfetched_compiled_metric_returns_error_not_directional_signal():
+    rule_text = "buy if the price is below 200"
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "PE below 20", "bound_metric": "pe_ratio", "operator": "<", "threshold": 20}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+
+    assert [tool.name for tool in plan_tools_for_rules(rule_text)] == ["get_quote"]
+
+    result = agent_module.evaluate_signals_from_data_batch(
+        [{"ticker": "AAPL", "fetched_data": {"get_quote": {"price": 150}}}],
+        rule_text,
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+        compiled_rule_set=rule_set,
+    )
+
+    assert result[0]["signal"] == "ERROR"
+    assert "PE below 20 [pe_ratio]: Metric is missing." in result[0]["rationale"]

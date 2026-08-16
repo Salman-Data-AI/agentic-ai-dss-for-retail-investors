@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 import config
 from agent.agent import _TOOL_DISPATCH, evaluate_signals_from_data_batch
+from agent.rule_approval import prepare_rule_set
 from agent.tool_planner import plan_tools_for_rules
 from paths import executable_env_path, user_env_path
 from settings import load_settings
@@ -38,12 +39,13 @@ def _fetch_once(tickers: list[str], rules: str) -> list[dict]:
     return items
 
 
-def measure_consistency(tickers: list[str], runs: int, rules: str, model: str) -> dict:
+def measure_consistency(tickers: list[str], runs: int, rules: str, model: str, compiled_rule_set: dict) -> dict:
     items = _fetch_once(tickers, rules)
     evaluations = [
         evaluate_signals_from_data_batch(
             items,
             rules=rules,
+            compiled_rule_set=compiled_rule_set,
             model=model,
             evaluation_type="BUY_EVAL",
         )
@@ -95,12 +97,16 @@ def main() -> None:
         raise SystemExit("--runs must be at least 2")
 
     settings = load_settings()
+    rule_state = prepare_rule_set(settings)
+    if not rule_state["ok"]:
+        raise SystemExit(f"Rule set is not approved: {rule_state.get('message')}")
     tickers = [ticker.strip().upper() for ticker in args.tickers.split(",") if ticker.strip()]
     result = measure_consistency(
         tickers=tickers,
         runs=args.runs,
         rules=settings.get("buy_rules") or config.BUY_RULES,
         model=settings.get("model") or config.MODEL,
+        compiled_rule_set=rule_state["rule_set"],
     )
     comparable_runs = len(tickers) * args.runs
     identical_runs = result["identical_ticker_count"] * args.runs
