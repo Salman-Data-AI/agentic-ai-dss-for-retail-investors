@@ -8,15 +8,16 @@ Usage:
     streamlit run src/dashboard/app.py
 """
 
+import json
 import os
 import sys
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from time import perf_counter
 
 import pandas as pd
 from dotenv import load_dotenv
+
 from paths import (
     analysis_summary_path,
     executable_env_path,
@@ -36,12 +37,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from settings import clean_portfolio_frame, clean_watchlist_frame, load_settings
-from agent.agent import _TOOL_DISPATCH, evaluate_signals_from_data_batch
-from agent.rule_approval import prepare_rule_set
-from agent.tool_planner import PlannedTool, plan_tools_with_diagnostics
-from agent.tools import get_fmp_request_count, get_fmp_run_request_count
-from database import write_signals
+from agent.agent import _TOOL_DISPATCH, evaluate_signals_from_data_batch  # noqa: E402
+from agent.rule_approval import prepare_rule_set  # noqa: E402
+from agent.tool_planner import PlannedTool, plan_tools_with_diagnostics  # noqa: E402
+from agent.tools import get_fmp_request_count, get_fmp_run_request_count  # noqa: E402
+from database import write_signals  # noqa: E402
+from settings import clean_portfolio_frame, clean_watchlist_frame, load_settings  # noqa: E402
 
 _USER_DATA_DIR = user_data_dir()
 _DATA_DIR = _USER_DATA_DIR
@@ -107,10 +108,7 @@ def _fetch_jobs(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
     timings = [None] * len(jobs)
     workers = min(MAX_WORKERS, len(jobs))
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        future_to_job = {
-            executor.submit(_fetch_job, job): job
-            for job in jobs
-        }
+        future_to_job = {executor.submit(_fetch_job, job): job for job in jobs}
         for future in as_completed(future_to_job):
             job = future_to_job[future]
             result = future.result()
@@ -121,8 +119,7 @@ def _fetch_jobs(jobs: list[dict]) -> tuple[list[dict], list[dict]]:
                 "fetch_elapsed_seconds": round(result["elapsed"], 3),
             }
             print(
-                f"  {job['ticker']:<8} fetched "
-                f"({result['elapsed']:.1f}s)",
+                f"  {job['ticker']:<8} fetched ({result['elapsed']:.1f}s)",
                 flush=True,
             )
     return fetched_results, timings
@@ -160,10 +157,7 @@ def _evaluate_group(
 
 
 def _format_plan(plan: list[PlannedTool]) -> str:
-    return ", ".join(
-        tool.name if not tool.args else f"{tool.name}{tool.args}"
-        for tool in plan
-    )
+    return ", ".join(tool.name if not tool.args else f"{tool.name}{tool.args}" for tool in plan)
 
 
 def _write_run_summary(summary: dict) -> None:
@@ -227,20 +221,22 @@ def run_analysis() -> dict:
     if buy_plan_diagnostics.fallback_only:
         print("  WARNING: BUY rules matched no specific data tools; using quote fallback only.")
     for ticker in _load_watchlist():
-        jobs.append({
-            "index": len(jobs),
-            "ticker": ticker,
-            "rules": settings["buy_rules"],
-            "model": settings["model"],
-            "evaluation_type": "BUY_EVAL",
-            "tool_plan": buy_plan,
-            "metadata": {
-                "signal_type": "BUY_EVAL",
-                "run_date": run_date,
-                "rules_applied": settings["buy_rules"],
-                **run_metadata,
-            },
-        })
+        jobs.append(
+            {
+                "index": len(jobs),
+                "ticker": ticker,
+                "rules": settings["buy_rules"],
+                "model": settings["model"],
+                "evaluation_type": "BUY_EVAL",
+                "tool_plan": buy_plan,
+                "metadata": {
+                    "signal_type": "BUY_EVAL",
+                    "run_date": run_date,
+                    "rules_applied": settings["buy_rules"],
+                    **run_metadata,
+                },
+            }
+        )
 
     print("\n-- SELL evaluation (portfolio) ---------------------------------")
     print(f"  plan: {_format_plan(sell_plan)}")
@@ -248,28 +244,30 @@ def run_analysis() -> dict:
         print("  WARNING: SELL rules matched no specific data tools; using quote fallback only.")
     for holding in _load_portfolio():
         ticker = holding["ticker"]
-        jobs.append({
-            "index": len(jobs),
-            "ticker": ticker,
-            "rules": settings["sell_rules"],
-            "model": settings["model"],
-            "evaluation_type": "SELL_EVAL",
-            "tool_plan": sell_plan,
-            "context_data": {
-                "holding": {
+        jobs.append(
+            {
+                "index": len(jobs),
+                "ticker": ticker,
+                "rules": settings["sell_rules"],
+                "model": settings["model"],
+                "evaluation_type": "SELL_EVAL",
+                "tool_plan": sell_plan,
+                "context_data": {
+                    "holding": {
+                        "entry_price": holding["entry_price"],
+                        "qty": holding["qty"],
+                        "entry_date": holding["entry_date"],
+                    }
+                },
+                "metadata": {
+                    "signal_type": "SELL_EVAL",
+                    "run_date": run_date,
                     "entry_price": holding["entry_price"],
-                    "qty": holding["qty"],
-                    "entry_date": holding["entry_date"],
-                }
-            },
-            "metadata": {
-                "signal_type": "SELL_EVAL",
-                "run_date": run_date,
-                "entry_price": holding["entry_price"],
-                "rules_applied": settings["sell_rules"],
-                **run_metadata,
-            },
-        })
+                    "rules_applied": settings["sell_rules"],
+                    **run_metadata,
+                },
+            }
+        )
 
     fetched_jobs, timings = _fetch_jobs(jobs)
     buy_fetched = [item for item in fetched_jobs if item["signal_type"] == "BUY_EVAL"]

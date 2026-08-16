@@ -16,7 +16,9 @@ import streamlit as st
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config
-from main import read_latest_run_summary, run_analysis
+from agent.rule_approval import approve_current_rule_set, compile_current_settings
+from agent.rule_compiler import current_rule_fingerprint
+from agent.tools import get_fmp_request_count
 from dashboard.logic import (
     build_history_rows,
     build_rule_clause_rows,
@@ -25,9 +27,14 @@ from dashboard.logic import (
     escape_markdown_math,
     split_signal_groups,
 )
-from agent.rule_approval import approve_current_rule_set, compile_current_settings
-from agent.rule_compiler import current_rule_fingerprint
-from agent.tools import get_fmp_request_count
+from database import (
+    read_filtered_signals,
+    read_latest_signals,
+    read_run_dates,
+    read_tickers,
+)
+from main import read_latest_run_summary, run_analysis
+from paths import user_data_dir
 from settings import (
     PORTFOLIO_COLUMNS,
     RULE_APPROVAL_UNVALIDATED,
@@ -40,13 +47,6 @@ from settings import (
     save_settings,
     user_csv_path,
     validate_portfolio_columns,
-)
-from paths import user_data_dir
-from database import (
-    read_latest_signals,
-    read_filtered_signals,
-    read_run_dates,
-    read_tickers,
 )
 
 _METRIC_REFERENCE = [
@@ -506,11 +506,7 @@ def _render_metrics_reference() -> None:
     }
     for category in dict.fromkeys(row["category"] for row in _METRIC_REFERENCE):
         st.markdown(f"#### {category}")
-        rows = [
-            {columns[key]: row[key] for key in columns}
-            for row in _METRIC_REFERENCE
-            if row["category"] == category
-        ]
+        rows = [{columns[key]: row[key] for key in columns} for row in _METRIC_REFERENCE if row["category"] == category]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
@@ -572,11 +568,13 @@ def _save_rule_editor_settings(
         "temperature": temperature.strip() or None,
     }
     if buy_rules != current["buy_rules"] or sell_rules != current["sell_rules"]:
-        next_values.update({
-            "compiled_rule_set": None,
-            "compiled_rule_fingerprint": "",
-            "rule_approval_state": RULE_APPROVAL_UNVALIDATED,
-        })
+        next_values.update(
+            {
+                "compiled_rule_set": None,
+                "compiled_rule_fingerprint": "",
+                "rule_approval_state": RULE_APPROVAL_UNVALIDATED,
+            }
+        )
     save_settings(next_values)
 
 
@@ -604,23 +602,21 @@ def _run_analysis_button(*, enabled: bool, use_container_width: bool = False) ->
 # ----------------------------------------------------------- card renderer
 def _render_card(s: dict) -> None:
     _SIGNAL_COLORS = {
-        "BUY":   ":green",
-        "SKIP":  ":gray",
-        "SELL":  ":red",
-        "HOLD":  ":orange",
+        "BUY": ":green",
+        "SKIP": ":gray",
+        "SELL": ":red",
+        "HOLD": ":orange",
         "ERROR": ":gray",
     }
     signal = s.get("signal", "ERROR")
-    color  = _SIGNAL_COLORS.get(signal, ":gray")
-    name   = s.get("data_fetched", {}).get("name") or s.get("ticker")
+    color = _SIGNAL_COLORS.get(signal, ":gray")
+    name = s.get("data_fetched", {}).get("name") or s.get("ticker")
     ticker = s.get("ticker", "")
     provider = s.get("provider") or "unknown"
     model = s.get("model")
 
     with st.container(border=True):
-        st.markdown(
-            f"**{name}** &nbsp; `{ticker}` &nbsp;&nbsp; {color}[**{signal}**]"
-        )
+        st.markdown(f"**{name}** &nbsp; `{ticker}` &nbsp;&nbsp; {color}[**{signal}**]")
         caption = f"via `{provider}`"
         if model:
             caption += f" · `{model}`"
@@ -628,10 +624,7 @@ def _render_card(s: dict) -> None:
         with st.expander("Why this signal?"):
             st.markdown(escape_markdown_math(s.get("rationale") or "No rationale available."))
 
-        data = {
-            k: v for k, v in s.get("data_fetched", {}).items()
-            if k not in ("ticker", "name")
-        }
+        data = {k: v for k, v in s.get("data_fetched", {}).items() if k not in ("ticker", "name")}
         if data:
             with st.expander("Data used"):
                 has_nested_values = any(isinstance(v, (dict, list)) for v in data.values())
@@ -714,7 +707,9 @@ if selected_view == "Latest Run":
         if active_blocked_summary:
             st.info("Showing the last successful saved signal run below; the most recent run attempt was blocked.")
         elif latest_run_is_blocked and rules_are_approved:
-            st.info("Showing the previous successful saved signal run below. Rules are now approved; click Run Analysis above to refresh these cards.")
+            st.info(
+                "Showing the previous successful saved signal run below. Rules are now approved; click Run Analysis above to refresh these cards."
+            )
         latest_provider = signals[0].get("provider") or "unknown"
         latest_model = signals[0].get("model")
         latest_caption = f"Last run: {signals[0]['run_date']} · via `{latest_provider}`"
@@ -746,7 +741,7 @@ if selected_view == "Latest Run":
 if selected_view == "History":
     st.caption("Select at least one filter to load results.")
 
-    run_dates   = read_run_dates()
+    run_dates = read_run_dates()
     all_tickers = read_tickers()
 
     col1, col2, col3 = st.columns(3)
@@ -771,8 +766,8 @@ if selected_view == "History":
         )
 
     # Resolve filter values — treat placeholder as None
-    f_date   = selected_date   if selected_date   != "— select —" else None
-    f_type   = selected_type   if selected_type   != "— select —" else None
+    f_date = selected_date if selected_date != "— select —" else None
+    f_type = selected_type if selected_type != "— select —" else None
     f_ticker = selected_ticker if selected_ticker != "— select —" else None
 
     if not any([f_date, f_type, f_ticker]):
@@ -791,10 +786,10 @@ if selected_view == "History":
 
             def _colour_signal(val):
                 return {
-                    "BUY":   "color: green; font-weight: bold",
-                    "SKIP":  "color: gray; font-weight: bold",
-                    "SELL":  "color: red; font-weight: bold",
-                    "HOLD":  "color: orange; font-weight: bold",
+                    "BUY": "color: green; font-weight: bold",
+                    "SKIP": "color: gray; font-weight: bold",
+                    "SELL": "color: red; font-weight: bold",
+                    "HOLD": "color: orange; font-weight: bold",
                     "ERROR": "color: grey",
                 }.get(val, "")
 
@@ -804,7 +799,7 @@ if selected_view == "History":
                 hide_index=True,
                 column_config={
                     "Rationale": st.column_config.TextColumn(width="large"),
-                    "Run date":  st.column_config.TextColumn(width="medium"),
+                    "Run date": st.column_config.TextColumn(width="medium"),
                 },
             )
             st.caption(f"{len(df)} records")
@@ -824,13 +819,13 @@ if selected_view == "Settings":
     selected_provider = st.selectbox(
         "LLM provider",
         options=provider_options,
-        index=provider_options.index(settings["provider"])
-        if settings["provider"] in provider_options
-        else 0,
+        index=provider_options.index(settings["provider"]) if settings["provider"] in provider_options else 0,
     )
     model = st.text_input(
         "Model",
-        value=settings["model"] if selected_provider == settings["provider"] else config.PROVIDER_DEFAULT_MODELS[selected_provider],
+        value=settings["model"]
+        if selected_provider == settings["provider"]
+        else config.PROVIDER_DEFAULT_MODELS[selected_provider],
         disabled=True,
         help="Automatically selected low-cost model for the chosen provider.",
     )

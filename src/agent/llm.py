@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
 import sys
+from dataclasses import dataclass
 from typing import Protocol
 
 from anthropic import Anthropic
@@ -94,14 +94,19 @@ class AnthropicAdapter:
         return LLMResponse(error=f"Unexpected stop reason: {response.stop_reason}")
 
     def append_tool_results(self, results: list[dict]) -> None:
-        self.messages.append({"role": "user", "content": [
+        self.messages.append(
             {
-                "type": "tool_result",
-                "tool_use_id": result["id"],
-                "content": json.dumps(result["result"]),
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": result["id"],
+                        "content": json.dumps(result["result"]),
+                    }
+                    for result in results
+                ],
             }
-            for result in results
-        ]})
+        )
 
 
 class OpenAICompatibleAdapter:
@@ -139,9 +144,7 @@ class OpenAICompatibleAdapter:
 
     def next_step(self) -> LLMResponse:
         token_limit = (
-            {"max_completion_tokens": self.max_tokens}
-            if self.provider == "openai"
-            else {"max_tokens": self.max_tokens}
+            {"max_completion_tokens": self.max_tokens} if self.provider == "openai" else {"max_tokens": self.max_tokens}
         )
         kwargs = {
             "model": self.model,
@@ -161,14 +164,16 @@ class OpenAICompatibleAdapter:
 
         if tool_calls:
             self.messages.append(self._assistant_message(message))
-            return LLMResponse(tool_calls=[
-                ToolCall(
-                    id=call.id,
-                    name=call.function.name,
-                    arguments=self._parse_arguments(call.function.arguments),
-                )
-                for call in tool_calls
-            ])
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id=call.id,
+                        name=call.function.name,
+                        arguments=self._parse_arguments(call.function.arguments),
+                    )
+                    for call in tool_calls
+                ]
+            )
 
         content = getattr(message, "content", None)
         if content:
@@ -179,11 +184,13 @@ class OpenAICompatibleAdapter:
 
     def append_tool_results(self, results: list[dict]) -> None:
         for result in results:
-            self.messages.append({
-                "role": "tool",
-                "tool_call_id": result["id"],
-                "content": json.dumps(result["result"]),
-            })
+            self.messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result["id"],
+                    "content": json.dumps(result["result"]),
+                }
+            )
 
     @staticmethod
     def _build_client(*, api_key: str, base_url: str):
@@ -191,7 +198,7 @@ class OpenAICompatibleAdapter:
             from openai import OpenAI
         except ImportError as exc:
             raise RuntimeError(
-                "The openai package is required for PROVIDER values openai, grok, groq, deepseek, gemini, and cerebras. "
+                "The openai package is required for PROVIDER values openai, grok, groq, deepseek, gemini, and cerebras."
                 "Install dependencies in the Python environment running the app with: "
                 f"{sys.executable} -m pip install -r requirements.txt"
             ) from exc

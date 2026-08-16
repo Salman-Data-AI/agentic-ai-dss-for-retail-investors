@@ -78,12 +78,17 @@ def main() -> int:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps({
-        "ticker": snapshot["ticker"],
-        "fetched_at_utc": snapshot["fetched_at_utc"],
-        "fmp_requests_used": snapshot["fmp_requests_used"],
-        "output": os.fspath(output_path),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "ticker": snapshot["ticker"],
+                "fetched_at_utc": snapshot["fetched_at_utc"],
+                "fmp_requests_used": snapshot["fmp_requests_used"],
+                "output": os.fspath(output_path),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

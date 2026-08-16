@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,18 +10,19 @@ from dotenv import load_dotenv
 import config
 from paths import seed_user_csv_defaults, user_data_file, user_env_path
 
-
 SETTINGS_FILENAME = "settings.json"
 RULE_APPROVAL_UNVALIDATED = "unvalidated"
 RULE_APPROVAL_COMPILED = "compiled"
 RULE_APPROVAL_APPROVED = "approved"
 RULE_APPROVAL_INVALIDATED = "invalidated"
-RULE_APPROVAL_STATES = frozenset({
-    RULE_APPROVAL_UNVALIDATED,
-    RULE_APPROVAL_COMPILED,
-    RULE_APPROVAL_APPROVED,
-    RULE_APPROVAL_INVALIDATED,
-})
+RULE_APPROVAL_STATES = frozenset(
+    {
+        RULE_APPROVAL_UNVALIDATED,
+        RULE_APPROVAL_COMPILED,
+        RULE_APPROVAL_APPROVED,
+        RULE_APPROVAL_INVALIDATED,
+    }
+)
 SETTINGS_KEYS = (
     "provider",
     "model",

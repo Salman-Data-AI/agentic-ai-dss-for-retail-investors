@@ -15,7 +15,7 @@ from settings import (
 
 from .rule_compiler import compile_rule_text, current_rule_fingerprint
 from .rule_sets import validate_rule_set
-from .tool_schemas import SUPPORTED_METRIC_KEYS
+from .metric_registry import SUPPORTED_METRIC_KEYS
 
 
 def prepare_rule_set(settings: dict[str, Any]) -> dict[str, Any]:
@@ -43,10 +43,12 @@ def prepare_rule_set(settings: dict[str, Any]) -> dict[str, Any]:
                 rule_set=saved_rule_set,
                 state=RULE_APPROVAL_COMPILED,
             )
-        save_settings({
-            **settings,
-            "rule_approval_state": RULE_APPROVAL_INVALIDATED,
-        })
+        save_settings(
+            {
+                **settings,
+                "rule_approval_state": RULE_APPROVAL_INVALIDATED,
+            }
+        )
         return _blocked("invalidated", "Approved rule set no longer validates.", fingerprint, validation=validation)
 
     compile_result = compile_rule_text(
@@ -57,20 +59,24 @@ def prepare_rule_set(settings: dict[str, Any]) -> dict[str, Any]:
         temperature=settings.get("temperature"),
     )
     if not compile_result["ok"]:
-        save_settings({
-            **settings,
-            "compiled_rule_set": None,
-            "compiled_rule_fingerprint": fingerprint,
-            "rule_approval_state": RULE_APPROVAL_INVALIDATED,
-        })
+        save_settings(
+            {
+                **settings,
+                "compiled_rule_set": None,
+                "compiled_rule_fingerprint": fingerprint,
+                "rule_approval_state": RULE_APPROVAL_INVALIDATED,
+            }
+        )
         return {**compile_result, "state": RULE_APPROVAL_INVALIDATED}
 
-    save_settings({
-        **settings,
-        "compiled_rule_set": compile_result["rule_set"],
-        "compiled_rule_fingerprint": fingerprint,
-        "rule_approval_state": RULE_APPROVAL_COMPILED,
-    })
+    save_settings(
+        {
+            **settings,
+            "compiled_rule_set": compile_result["rule_set"],
+            "compiled_rule_fingerprint": fingerprint,
+            "rule_approval_state": RULE_APPROVAL_COMPILED,
+        }
+    )
     return _blocked(
         "approval_required",
         "Rule set compiled and must be approved before analysis can run.",
@@ -89,7 +95,9 @@ def approve_current_rule_set() -> dict[str, Any]:
     """Approve the current compiled rule set through the shared state machine."""
     settings = load_settings()
     fingerprint = current_rule_fingerprint(settings["buy_rules"], settings["sell_rules"])
-    if settings.get("compiled_rule_fingerprint") != fingerprint or not isinstance(settings.get("compiled_rule_set"), dict):
+    if settings.get("compiled_rule_fingerprint") != fingerprint or not isinstance(
+        settings.get("compiled_rule_set"), dict
+    ):
         prepared = prepare_rule_set(settings)
         if prepared["ok"] or prepared.get("code") == "approval_required":
             settings = load_settings()
@@ -97,8 +105,12 @@ def approve_current_rule_set() -> dict[str, Any]:
             return prepared
 
     settings = load_settings()
-    if settings.get("compiled_rule_fingerprint") != fingerprint or not isinstance(settings.get("compiled_rule_set"), dict):
-        return _blocked("approval_missing_compile", "No current compiled rule set is available to approve.", fingerprint)
+    if settings.get("compiled_rule_fingerprint") != fingerprint or not isinstance(
+        settings.get("compiled_rule_set"), dict
+    ):
+        return _blocked(
+            "approval_missing_compile", "No current compiled rule set is available to approve.", fingerprint
+        )
 
     validation = validate_rule_set(settings["compiled_rule_set"], set(SUPPORTED_METRIC_KEYS))
     if not validation["valid"]:

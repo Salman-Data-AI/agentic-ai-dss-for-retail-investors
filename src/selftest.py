@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -119,14 +119,17 @@ def _looks_like_ssl_error(text: str | None) -> bool:
     if not text:
         return False
     lowered = text.lower()
-    return any(token in lowered for token in (
-        "ssl",
-        "certificate",
-        "certifi",
-        "certificate_verify_failed",
-        "tls",
-        "truststore",
-    ))
+    return any(
+        token in lowered
+        for token in (
+            "ssl",
+            "certificate",
+            "certifi",
+            "certificate_verify_failed",
+            "tls",
+            "truststore",
+        )
+    )
 
 
 def run_selftest(print_func: Callable[[str], None] = print) -> int:

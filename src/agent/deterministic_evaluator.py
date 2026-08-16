@@ -24,7 +24,6 @@ import operator as operator_module
 from numbers import Real
 from typing import Any
 
-
 BUY_EVALUATION = "BUY"
 SELL_EVALUATION = "SELL"
 
@@ -111,7 +110,9 @@ def _result(
 ) -> dict[str, Any]:
     return {
         "signal": signal,
-        "triggering_rule": triggering_rule if triggering_rule is not None else _summarize_triggering_rule(triggering_clauses),
+        "triggering_rule": triggering_rule
+        if triggering_rule is not None
+        else _summarize_triggering_rule(triggering_clauses),
         "triggering_clauses": triggering_clauses,
         "clause_outcomes": clause_outcomes,
         "error": None,

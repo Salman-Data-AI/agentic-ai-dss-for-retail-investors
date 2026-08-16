@@ -8,7 +8,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 APP_NAME = "Agentic AI DSS for Retail Investors"
 _WRITE_TEST_FILENAME = ".write-test"
 
@@ -21,7 +20,7 @@ def is_frozen() -> bool:
 def bundle_dir() -> str:
     """Return the read-only application base directory."""
     if is_frozen():
-        return str(Path(getattr(sys, "_MEIPASS")).resolve())
+        return str(Path(sys._MEIPASS).resolve())
     return str(Path(__file__).resolve().parent)
 
 

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import config
 from paths import executable_env_path, user_env_path
 from settings import load_settings
+
 from .deterministic_evaluator import BUY_EVALUATION, SELL_EVALUATION, evaluate_rule_set
 from .llm import create_llm_client
 from .metric_registry import METRIC_ALIASES
@@ -87,14 +88,18 @@ INSTRUCTIONS:
 1. Read the user's rules carefully.
 2. Use only the fetched data supplied by the application. Do not request tools or invent missing data.
 3. Evaluate each ticker independently against the relevant rule.
-4. Return your result as a JSON array. The array must contain exactly one object for each input ticker, using exactly these five fields:
+4. Return your result as a JSON array. The array must contain exactly one object for each input ticker,
+using exactly these five fields:
 
 [
   {{
     "ticker": "<ticker>",
     "signal": "<{allowed_signals}>",
-    "triggering_rule": "<The single user rule, quoted or closely paraphrased, that most directly drove this signal. For SKIP/HOLD, state which criterion was closest to being met and why it was not.>",
-    "rationale": "<Explain what the key metric values mean in market terms, why they are or are not significant right now, and connect them to the signal. Three to four plain-English sentences. Do not just report pass/fail; explain what the numbers are telling the investor about the stock's current condition.>",
+    "triggering_rule": "<The single user rule, quoted or closely paraphrased, that most directly drove this signal.
+        For SKIP/HOLD, state which criterion was closest to being met and why it was not.>",
+    "rationale": "<Explain what the key metric values mean in market terms, why they are or are not significant
+         right now, and connect them to the signal. Three to four plain-English sentences. Do not just report pass/fail;
+        explain what the numbers are telling the investor about the stock's current condition.>",
     "data_fetched": {{ "<metric_name>": <compact value>, ... }}
   }}
 ]
@@ -124,12 +129,14 @@ Return your result as a JSON array with exactly one object per input ticker:
 [
   {{
     "ticker": "<ticker>",
-    "rationale": "<Three to four plain-English sentences explaining the deterministic signal using the supplied fetched data and triggering rule.>",
+    "rationale": "<Three to four plain-English sentences explaining the deterministic signal
+        using the supplied fetched data and triggering rule.>",
     "data_fetched": {{ "<metric_name>": <compact value>, ... }}
   }}
 ]
 
-Do not change, reinterpret, or contradict the supplied signal or triggering_rule. Temperature can affect wording only; it does not affect the signal.
+Do not change, reinterpret, or contradict the supplied signal or triggering_rule.
+Temperature can affect wording only; it does not affect the signal.
 Keep data_fetched compact and include only values relevant to the supplied decision.
 Return ONLY the JSON array.
 """
@@ -177,7 +184,7 @@ def evaluate_signals_from_data_batch(
         return [
             _error(
                 item["ticker"],
-                f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek, gemini, cerebras.",
+                f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek, gemini, cerebras.",  # noqa: E501
             )
             for item in items
         ]
@@ -189,10 +196,7 @@ def evaluate_signals_from_data_batch(
         }
         for item in items
     ]
-    user_content = (
-        "Evaluate these stocks independently.\n\n"
-        f"FETCHED DATA JSON:\n{json.dumps(payload, sort_keys=True)}"
-    )
+    user_content = f"Evaluate these stocks independently.\n\nFETCHED DATA JSON:\n{json.dumps(payload, sort_keys=True)}"
 
     try:
         client = create_llm_client(
@@ -218,10 +222,7 @@ def evaluate_signals_from_data_batch(
             allowed_signals=allowed_signals,
         )
     if response.tool_calls is not None:
-        return [
-            _error(item["ticker"], "Agent requested tools even though data was already fetched")
-            for item in items
-        ]
+        return [_error(item["ticker"], "Agent requested tools even though data was already fetched") for item in items]
     return [_error(item["ticker"], response.error or "Agent returned no response") for item in items]
 
 
@@ -244,16 +245,20 @@ def _evaluate_with_deterministic_signals(
 
     deterministic_rows = []
     for item in items:
-        evaluation = evaluate_rule_set(compiled_rule_set, _flatten_metrics(item.get("fetched_data", {})), deterministic_type)
-        deterministic_rows.append({
-            "ticker": item["ticker"],
-            "signal": evaluation["signal"],
-            "triggering_rule": evaluation["triggering_rule"],
-            "rationale": _format_deterministic_error(evaluation) if evaluation["error"] else "",
-            "data_fetched": item.get("fetched_data", {}),
-            "triggering_clauses": evaluation["triggering_clauses"],
-            "clause_outcomes": evaluation["clause_outcomes"],
-        })
+        evaluation = evaluate_rule_set(
+            compiled_rule_set, _flatten_metrics(item.get("fetched_data", {})), deterministic_type
+        )
+        deterministic_rows.append(
+            {
+                "ticker": item["ticker"],
+                "signal": evaluation["signal"],
+                "triggering_rule": evaluation["triggering_rule"],
+                "rationale": _format_deterministic_error(evaluation) if evaluation["error"] else "",
+                "data_fetched": item.get("fetched_data", {}),
+                "triggering_clauses": evaluation["triggering_clauses"],
+                "clause_outcomes": evaluation["clause_outcomes"],
+            }
+        )
 
     if all(row["signal"] == "ERROR" for row in deterministic_rows):
         return deterministic_rows
@@ -265,7 +270,7 @@ def _evaluate_with_deterministic_signals(
         model = settings.get("model") or model
     provider_settings = getattr(config, "PROVIDER_SETTINGS", {}).get(provider)
     if not provider_settings:
-        message = f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek, gemini, cerebras."
+        message = f"Unsupported PROVIDER={provider!r}. Choose one of: anthropic, openai, grok, groq, deepseek, gemini, cerebras."  # noqa: E501
         return [_merge_rationale_error(row, message) for row in deterministic_rows]
 
     payload = [
@@ -300,7 +305,10 @@ def _evaluate_with_deterministic_signals(
     if response.final_text is not None:
         return _parse_rationale_batch_response(deterministic_rows, response.final_text)
     if response.tool_calls is not None:
-        return [_merge_rationale_error(row, "Agent requested tools even though data was already fetched") for row in deterministic_rows]
+        return [
+            _merge_rationale_error(row, "Agent requested tools even though data was already fetched")
+            for row in deterministic_rows
+        ]
     return [_merge_rationale_error(row, response.error or "Agent returned no response") for row in deterministic_rows]
 
 
@@ -312,30 +320,34 @@ def _parse_rationale_batch_response(deterministic_rows: list[dict], text: str) -
     try:
         parsed = json.loads(text[start:end])
     except json.JSONDecodeError:
-        return [_merge_rationale_error(row, f"Could not parse agent response: {text[:300]}") for row in deterministic_rows]
+        return [
+            _merge_rationale_error(row, f"Could not parse agent response: {text[:300]}") for row in deterministic_rows
+        ]
     if not isinstance(parsed, list):
         return [_merge_rationale_error(row, "Agent returned JSON but not an array") for row in deterministic_rows]
 
-    by_ticker = {
-        str(row.get("ticker", "")).upper().strip(): row
-        for row in parsed
-        if isinstance(row, dict)
-    }
+    by_ticker = {str(row.get("ticker", "")).upper().strip(): row for row in parsed if isinstance(row, dict)}
     results = []
     for deterministic_row in deterministic_rows:
         row = by_ticker.get(deterministic_row["ticker"].upper().strip())
         if not row:
-            results.append(_merge_rationale_error(deterministic_row, "Agent omitted this ticker from the batch response"))
+            results.append(
+                _merge_rationale_error(deterministic_row, "Agent omitted this ticker from the batch response")
+            )
             continue
         rationale = row.get("rationale")
         if not isinstance(rationale, str) or not rationale.strip():
-            results.append(_merge_rationale_error(deterministic_row, "Agent omitted non-empty rationale from the response"))
+            results.append(
+                _merge_rationale_error(deterministic_row, "Agent omitted non-empty rationale from the response")
+            )
             continue
-        results.append({
-            **deterministic_row,
-            "rationale": rationale,
-            "data_fetched": deterministic_row["data_fetched"],
-        })
+        results.append(
+            {
+                **deterministic_row,
+                "rationale": rationale,
+                "data_fetched": deterministic_row["data_fetched"],
+            }
+        )
     return results
 
 
@@ -368,11 +380,7 @@ def _parse_signal_batch_response(
     if not isinstance(parsed, list):
         return [_error(item["ticker"], "Agent returned JSON but not an array") for item in items]
 
-    by_ticker = {
-        str(row.get("ticker", "")).upper().strip(): row
-        for row in parsed
-        if isinstance(row, dict)
-    }
+    by_ticker = {str(row.get("ticker", "")).upper().strip(): row for row in parsed if isinstance(row, dict)}
     results = []
     for item in items:
         ticker = item["ticker"]
@@ -381,13 +389,15 @@ def _parse_signal_batch_response(
             results.append(_error(ticker, "Agent omitted this ticker from the batch response"))
             continue
         if row.get("signal") not in contract["allowed"]:
-            results.append(_error(
-                ticker,
-                (
-                    f"Agent returned invalid signal {row.get('signal')!r} "
-                    f"for {evaluation_type}. Allowed signals: {allowed_signals}."
-                ),
-            ))
+            results.append(
+                _error(
+                    ticker,
+                    (
+                        f"Agent returned invalid signal {row.get('signal')!r} "
+                        f"for {evaluation_type}. Allowed signals: {allowed_signals}."
+                    ),
+                )
+            )
             continue
         triggering_rule = row.get("triggering_rule")
         # The model reports this rule; validation checks presence, not correctness.

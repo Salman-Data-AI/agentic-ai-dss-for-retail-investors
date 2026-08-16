@@ -6,28 +6,28 @@ from database import store
 
 
 def test_write_signals_initializes_table_and_round_trips(temp_db_path):
-    signals = [{
-        "run_date": "2026-07-02 10:00:00",
-        "ticker": "AAPL",
-        "signal_type": "BUY_EVAL",
-        "signal": "BUY",
-        "rationale": "Looks attractive.",
-        "data_fetched": {"name": "Apple Inc.", "rsi": 31.2},
-        "entry_price": None,
-        "provider": "anthropic",
-        "model": "claude-test",
-        "rules_applied": "Buy when RSI is below 35.",
-        "triggering_rule": "RSI is below 35.",
-        "temperature": 0.0,
-        "run_elapsed_seconds": 12.34,
-    }]
+    signals = [
+        {
+            "run_date": "2026-07-02 10:00:00",
+            "ticker": "AAPL",
+            "signal_type": "BUY_EVAL",
+            "signal": "BUY",
+            "rationale": "Looks attractive.",
+            "data_fetched": {"name": "Apple Inc.", "rsi": 31.2},
+            "entry_price": None,
+            "provider": "anthropic",
+            "model": "claude-test",
+            "rules_applied": "Buy when RSI is below 35.",
+            "triggering_rule": "RSI is below 35.",
+            "temperature": 0.0,
+            "run_elapsed_seconds": 12.34,
+        }
+    ]
 
     store.write_signals(signals)
 
     with sqlite3.connect(temp_db_path) as conn:
-        table = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'signals'"
-        ).fetchone()
+        table = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'signals'").fetchone()
     assert table == ("signals",)
     assert store.read_latest_signals() == signals
 
@@ -59,53 +59,55 @@ def test_write_signals_preserves_null_metric_values_in_data_fetched(temp_db_path
 
 
 def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker(temp_db_path):
-    store.write_signals([
-        {
-            "run_date": "2026-07-01 09:00:00",
-            "ticker": "ZZZ",
-            "signal_type": "BUY_EVAL",
-            "signal": "HOLD",
-            "rationale": "old",
-            "data_fetched": {"old": True},
-            "entry_price": None,
-            "provider": "anthropic",
-            "model": "claude-test",
-            "rules_applied": "old rules",
-            "triggering_rule": "old rule",
-            "temperature": None,
-            "run_elapsed_seconds": 5.0,
-        },
-        {
-            "run_date": "2026-07-02 09:00:00",
-            "ticker": "MSFT",
-            "signal_type": "SELL_EVAL",
-            "signal": "SELL",
-            "rationale": "sell",
-            "data_fetched": {"name": "Microsoft", "nested": {"ok": True}},
-            "entry_price": 300.0,
-            "provider": "openai",
-            "model": "gpt-test",
-            "rules_applied": "sell rules",
-            "triggering_rule": "profit target",
-            "temperature": 0.2,
-            "run_elapsed_seconds": 7.5,
-        },
-        {
-            "run_date": "2026-07-02 09:00:00",
-            "ticker": "AAPL",
-            "signal_type": "BUY_EVAL",
-            "signal": "BUY",
-            "rationale": "buy",
-            "data_fetched": {"name": "Apple", "rsi": 29.0},
-            "entry_price": None,
-            "provider": "groq",
-            "model": "llama-test",
-            "rules_applied": "buy rules",
-            "triggering_rule": "oversold RSI",
-            "temperature": None,
-            "run_elapsed_seconds": 7.5,
-        },
-    ])
+    store.write_signals(
+        [
+            {
+                "run_date": "2026-07-01 09:00:00",
+                "ticker": "ZZZ",
+                "signal_type": "BUY_EVAL",
+                "signal": "HOLD",
+                "rationale": "old",
+                "data_fetched": {"old": True},
+                "entry_price": None,
+                "provider": "anthropic",
+                "model": "claude-test",
+                "rules_applied": "old rules",
+                "triggering_rule": "old rule",
+                "temperature": None,
+                "run_elapsed_seconds": 5.0,
+            },
+            {
+                "run_date": "2026-07-02 09:00:00",
+                "ticker": "MSFT",
+                "signal_type": "SELL_EVAL",
+                "signal": "SELL",
+                "rationale": "sell",
+                "data_fetched": {"name": "Microsoft", "nested": {"ok": True}},
+                "entry_price": 300.0,
+                "provider": "openai",
+                "model": "gpt-test",
+                "rules_applied": "sell rules",
+                "triggering_rule": "profit target",
+                "temperature": 0.2,
+                "run_elapsed_seconds": 7.5,
+            },
+            {
+                "run_date": "2026-07-02 09:00:00",
+                "ticker": "AAPL",
+                "signal_type": "BUY_EVAL",
+                "signal": "BUY",
+                "rationale": "buy",
+                "data_fetched": {"name": "Apple", "rsi": 29.0},
+                "entry_price": None,
+                "provider": "groq",
+                "model": "llama-test",
+                "rules_applied": "buy rules",
+                "triggering_rule": "oversold RSI",
+                "temperature": None,
+                "run_elapsed_seconds": 7.5,
+            },
+        ]
+    )
 
     latest = store.read_latest_signals()
 
@@ -145,26 +147,32 @@ def test_init_migrates_legacy_table_and_preserves_old_rows(temp_db_path):
             ("2026-07-01 09:00:00", "AAPL", "BUY_EVAL", "HOLD", "legacy", "{}", None),
         )
 
-    store.write_signals([{
-        "run_date": "2026-07-02 09:00:00",
-        "ticker": "MSFT",
-        "signal_type": "BUY_EVAL",
-        "signal": "BUY",
-        "rationale": "new",
-        "data_fetched": {"price": 300},
-        "entry_price": None,
-        "provider": "openai",
-        "model": "gpt-test",
-        "rules_applied": "new rules",
-        "triggering_rule": "new rule",
-        "temperature": 0.0,
-        "run_elapsed_seconds": 3.21,
-    }])
+    store.write_signals(
+        [
+            {
+                "run_date": "2026-07-02 09:00:00",
+                "ticker": "MSFT",
+                "signal_type": "BUY_EVAL",
+                "signal": "BUY",
+                "rationale": "new",
+                "data_fetched": {"price": 300},
+                "entry_price": None,
+                "provider": "openai",
+                "model": "gpt-test",
+                "rules_applied": "new rules",
+                "triggering_rule": "new rule",
+                "temperature": 0.0,
+                "run_elapsed_seconds": 3.21,
+            }
+        ]
+    )
 
     with sqlite3.connect(temp_db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
 
-    assert {"provider", "model", "rules_applied", "triggering_rule", "temperature", "run_elapsed_seconds"}.issubset(columns)
+    assert {"provider", "model", "rules_applied", "triggering_rule", "temperature", "run_elapsed_seconds"}.issubset(
+        columns
+    )
 
     old_rows = store.read_filtered_signals(run_date="2026-07-01 09:00:00")
     latest = store.read_latest_signals()

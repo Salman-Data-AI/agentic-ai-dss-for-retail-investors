@@ -35,13 +35,15 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
         return {"get_quote": {"ticker": ticker, "name": f"{ticker} Corp"}}
 
     def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
-        calls.append({
-            "items": items,
-            "rules": rules,
-            "model": model,
-            "evaluation_type": evaluation_type,
-            "compiled_rule_set": compiled_rule_set,
-        })
+        calls.append(
+            {
+                "items": items,
+                "rules": rules,
+                "model": model,
+                "evaluation_type": evaluation_type,
+                "compiled_rule_set": compiled_rule_set,
+            }
+        )
         return [
             {
                 "ticker": item["ticker"],
@@ -61,18 +63,26 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: summaries.append(summary))
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
-    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
-        "ok": True,
-        "rule_set": {"buy_clauses": [], "sell_clauses": []},
-        "fingerprint": "fp",
-    })
-    monkeypatch.setattr(pipeline, "load_settings", lambda: {
-        "provider": "openai",
-        "model": "test-model",
-        "buy_rules": "buy rules",
-        "sell_rules": "sell rules",
-        "temperature": 0.0,
-    })
+    monkeypatch.setattr(
+        pipeline,
+        "prepare_rule_set",
+        lambda current: {
+            "ok": True,
+            "rule_set": {"buy_clauses": [], "sell_clauses": []},
+            "fingerprint": "fp",
+        },
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "load_settings",
+        lambda: {
+            "provider": "openai",
+            "model": "test-model",
+            "buy_rules": "buy rules",
+            "sell_rules": "sell rules",
+            "temperature": 0.0,
+        },
+    )
 
     result = pipeline.run_analysis()
 
@@ -126,24 +136,28 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
         encoding="utf-8",
     )
 
-    settings.save_settings({
-        "provider": "openai",
-        "model": "runtime-model",
-        "buy_rules": "runtime buy rules",
-        "sell_rules": "runtime sell rules",
-        "temperature": None,
-    })
+    settings.save_settings(
+        {
+            "provider": "openai",
+            "model": "runtime-model",
+            "buy_rules": "runtime buy rules",
+            "sell_rules": "runtime sell rules",
+            "temperature": None,
+        }
+    )
 
     calls = []
     written = []
 
     def fake_evaluate_batch(items, rules, model, evaluation_type, compiled_rule_set=None):
-        calls.append({
-            "tickers": [item["ticker"] for item in items],
-            "rules": rules,
-            "model": model,
-            "evaluation_type": evaluation_type,
-        })
+        calls.append(
+            {
+                "tickers": [item["ticker"] for item in items],
+                "rules": rules,
+                "model": model,
+                "evaluation_type": evaluation_type,
+            }
+        )
         return [
             {
                 "ticker": item["ticker"],
@@ -163,11 +177,15 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
-    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
-        "ok": True,
-        "rule_set": {"buy_clauses": [], "sell_clauses": []},
-        "fingerprint": "fp",
-    })
+    monkeypatch.setattr(
+        pipeline,
+        "prepare_rule_set",
+        lambda current: {
+            "ok": True,
+            "rule_set": {"buy_clauses": [], "sell_clauses": []},
+            "fingerprint": "fp",
+        },
+    )
 
     pipeline.run_analysis()
 
@@ -223,18 +241,26 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
-    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
-        "ok": True,
-        "rule_set": {"buy_clauses": [], "sell_clauses": []},
-        "fingerprint": "fp",
-    })
-    monkeypatch.setattr(pipeline, "load_settings", lambda: {
-        "provider": "openai",
-        "model": "test-model",
-        "buy_rules": "buy rules",
-        "sell_rules": "sell rules",
-        "temperature": None,
-    })
+    monkeypatch.setattr(
+        pipeline,
+        "prepare_rule_set",
+        lambda current: {
+            "ok": True,
+            "rule_set": {"buy_clauses": [], "sell_clauses": []},
+            "fingerprint": "fp",
+        },
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "load_settings",
+        lambda: {
+            "provider": "openai",
+            "model": "test-model",
+            "buy_rules": "buy rules",
+            "sell_rules": "sell rules",
+            "temperature": None,
+        },
+    )
 
     pipeline.run_analysis()
 
@@ -251,25 +277,37 @@ def test_run_analysis_blocks_before_fetch_when_rules_are_not_approved(workspace_
     summaries = []
     monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
     monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
-    monkeypatch.setattr(pipeline, "_execute_tool_plan", lambda ticker, plan: (_ for _ in ()).throw(AssertionError("should not fetch")))
-    monkeypatch.setattr(pipeline, "write_signals", lambda signals: (_ for _ in ()).throw(AssertionError("should not write")))
+    monkeypatch.setattr(
+        pipeline, "_execute_tool_plan", lambda ticker, plan: (_ for _ in ()).throw(AssertionError("should not fetch"))
+    )
+    monkeypatch.setattr(
+        pipeline, "write_signals", lambda signals: (_ for _ in ()).throw(AssertionError("should not write"))
+    )
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: summaries.append(summary))
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
-    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
-        "ok": False,
-        "code": "approval_required",
-        "message": "Rule set compiled and must be approved before analysis can run.",
-        "state": "compiled",
-        "fingerprint": "fp",
-    })
-    monkeypatch.setattr(pipeline, "load_settings", lambda: {
-        "provider": "openai",
-        "model": "test-model",
-        "buy_rules": "buy rules",
-        "sell_rules": "sell rules",
-        "temperature": None,
-    })
+    monkeypatch.setattr(
+        pipeline,
+        "prepare_rule_set",
+        lambda current: {
+            "ok": False,
+            "code": "approval_required",
+            "message": "Rule set compiled and must be approved before analysis can run.",
+            "state": "compiled",
+            "fingerprint": "fp",
+        },
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "load_settings",
+        lambda: {
+            "provider": "openai",
+            "model": "test-model",
+            "buy_rules": "buy rules",
+            "sell_rules": "sell rules",
+            "temperature": None,
+        },
+    )
 
     result = pipeline.run_analysis()
 
@@ -296,31 +334,43 @@ def test_run_analysis_reproducible_for_fixed_fetched_data(workspace_tmp_path, mo
 
         def next_step(self):
             self.calls += 1
-            return LLMResponse(final_text='[{"ticker":"AAPL","rationale":"Different wording is allowed.","data_fetched":{"pe_ratio":999}}]')
+            return LLMResponse(
+                final_text='[{"ticker":"AAPL","rationale":"Different wording is allowed.","data_fetched":{"pe_ratio":999}}]'
+            )
 
     monkeypatch.setattr(pipeline, "_DATA_DIR", str(data_dir))
     monkeypatch.setattr(pipeline, "MAX_WORKERS", 1)
     monkeypatch.setattr(pipeline, "datetime", FixedDateTime)
-    monkeypatch.setattr(pipeline, "_execute_tool_plan", lambda ticker, plan: {"get_key_metrics": {"pe_ratio": 18, "eps_ttm": 4.2}})
+    monkeypatch.setattr(
+        pipeline, "_execute_tool_plan", lambda ticker, plan: {"get_key_metrics": {"pe_ratio": 18, "eps_ttm": 4.2}}
+    )
     monkeypatch.setattr(pipeline, "write_signals", lambda signals: writes.append([dict(signal) for signal in signals]))
     monkeypatch.setattr(pipeline, "_write_run_summary", lambda summary: None)
     monkeypatch.setattr(pipeline, "get_fmp_run_request_count", lambda: 0)
     monkeypatch.setattr(pipeline, "get_fmp_request_count", lambda: 0)
-    monkeypatch.setattr(pipeline, "prepare_rule_set", lambda current: {
-        "ok": True,
-        "rule_set": rule_set,
-        "fingerprint": "fp",
-    })
-    monkeypatch.setattr(pipeline, "load_settings", lambda: {
-        "provider": "anthropic",
-        "model": "test-model",
-        "buy_rules": "PE below 20",
-        "sell_rules": "RSI above 70",
-        "temperature": 0.7,
-    })
-    monkeypatch.setattr(agent_module.config, "PROVIDER_SETTINGS", {
-        "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}
-    })
+    monkeypatch.setattr(
+        pipeline,
+        "prepare_rule_set",
+        lambda current: {
+            "ok": True,
+            "rule_set": rule_set,
+            "fingerprint": "fp",
+        },
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "load_settings",
+        lambda: {
+            "provider": "anthropic",
+            "model": "test-model",
+            "buy_rules": "PE below 20",
+            "sell_rules": "RSI above 70",
+            "temperature": 0.7,
+        },
+    )
+    monkeypatch.setattr(
+        agent_module.config, "PROVIDER_SETTINGS", {"anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}}
+    )
     monkeypatch.setattr(agent_module, "create_llm_client", lambda **kwargs: FakeClient())
 
     pipeline.run_analysis()
