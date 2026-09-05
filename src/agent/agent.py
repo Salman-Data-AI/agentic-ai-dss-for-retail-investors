@@ -84,6 +84,8 @@ def evaluate_signals_from_data_batch(
     compiled_rule_set: dict,
     model: str = "claude-sonnet-4-6",
     evaluation_type: str = "GENERAL",
+    *,
+    explanation_mode: bool = True,
 ) -> list[dict]:
     """Evaluate multiple tickers from already-fetched data with deterministic signals."""
     if not items:
@@ -93,6 +95,7 @@ def evaluate_signals_from_data_batch(
         model=model,
         evaluation_type=evaluation_type,
         compiled_rule_set=compiled_rule_set,
+        explanation_mode=explanation_mode,
     )
 
 
@@ -102,6 +105,7 @@ def _evaluate_with_deterministic_signals(
     model: str,
     evaluation_type: str,
     compiled_rule_set: dict,
+    explanation_mode: bool,
 ) -> list[dict]:
     deterministic_type = {
         "BUY_EVAL": BUY_EVALUATION,
@@ -132,6 +136,15 @@ def _evaluate_with_deterministic_signals(
 
     if all(row["signal"] == "ERROR" for row in deterministic_rows):
         return deterministic_rows
+
+    if not explanation_mode:
+        return [
+            {
+                **row,
+                "rationale": row["rationale"] if row["signal"] == "ERROR" else None,
+            }
+            for row in deterministic_rows
+        ]
 
     settings = load_settings()
     provider = settings.get("provider") or getattr(config, "PROVIDER", "anthropic")

@@ -73,12 +73,30 @@ def build_history_rows(results: list[dict]) -> list[dict]:
                 "Company": name,
                 "Type": "BUY eval" if s["signal_type"] == "BUY_EVAL" else "SELL eval",
                 "Signal": s["signal"],
+                "Mode": explanation_mode_label(s.get("explanation_mode")),
                 "Provider": s.get("provider") or "",
                 "Model": s.get("model") or "",
                 "Rationale": s.get("rationale") or "",
             }
         )
     return rows
+
+
+def explanation_mode_label(value) -> str:
+    """Return a display label for the stored explanation mode value."""
+    if value is True:
+        return "Transparent"
+    if value is False:
+        return "Opaque"
+    return "Unknown"
+
+
+def explanation_mode_filter_value(label: str) -> str | None:
+    """Translate the History filter label into the store query value."""
+    return {
+        "Transparent": "transparent",
+        "Opaque": "opaque",
+    }.get(label)
 
 
 def build_rule_clause_rows(rule_set: dict | None, clause_key: str) -> list[dict]:

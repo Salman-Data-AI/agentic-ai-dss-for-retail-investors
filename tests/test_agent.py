@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 import agent.agent as agent_module
-from agent.llm import AnthropicAdapter, OpenAICompatibleAdapter, ToolCall
+from agent.llm import AnthropicAdapter, LLMResponse, OpenAICompatibleAdapter, ToolCall
 
 
 def text_block(text):
@@ -245,3 +245,80 @@ def test_flatten_metrics_derives_volume_vs_average_pct():
     )
 
     assert metrics["volume_vs_average_pct"] == 50.0
+
+
+def test_opaque_explanation_mode_skips_provider_and_preserves_deterministic_fields(monkeypatch):
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "RSI below 35", "bound_metric": "rsi", "operator": "<", "threshold": 35}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+    create_mock = Mock()
+    monkeypatch.setattr(agent_module, "create_llm_client", create_mock)
+
+    result = agent_module.evaluate_signals_from_data_batch(
+        [{"ticker": "AAPL", "fetched_data": {"get_rsi": {"rsi": 30}}}],
+        "buy when RSI below 35",
+        compiled_rule_set=rule_set,
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+        explanation_mode=False,
+    )
+
+    create_mock.assert_not_called()
+    assert result[0]["signal"] == "BUY"
+    assert result[0]["signal"] in {"BUY", "SKIP", "ERROR"}
+    assert result[0]["triggering_rule"] == "RSI below 35"
+    assert result[0]["rationale"] is None
+    assert result[0]["data_fetched"] == {"get_rsi": {"rsi": 30}}
+
+
+def test_opaque_explanation_mode_keeps_error_rationale(monkeypatch):
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "EPS positive", "bound_metric": "eps", "operator": ">", "threshold": 0}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+    create_mock = Mock()
+    monkeypatch.setattr(agent_module, "create_llm_client", create_mock)
+
+    result = agent_module.evaluate_signals_from_data_batch(
+        [{"ticker": "BA", "fetched_data": {"get_quote": {"price": 200}}}],
+        "EPS positive",
+        compiled_rule_set=rule_set,
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+        explanation_mode=False,
+    )
+
+    create_mock.assert_not_called()
+    assert result[0]["signal"] == "ERROR"
+    assert "EPS positive [eps]: Metric is missing." in result[0]["rationale"]
+
+
+def test_evaluate_signals_default_explanation_mode_calls_provider(monkeypatch):
+    rule_set = {
+        "buy_clauses": [{"user_phrase": "RSI below 35", "bound_metric": "rsi", "operator": "<", "threshold": 35}],
+        "sell_clauses": [{"user_phrase": "RSI above 70", "bound_metric": "rsi", "operator": ">", "threshold": 70}],
+    }
+    fake_client = SimpleNamespace(
+        next_step=Mock(
+            return_value=LLMResponse(
+                final_text='[{"ticker":"AAPL","rationale":"RSI is below the threshold.","data_fetched":{"rsi":30}}]'
+            )
+        )
+    )
+    create_mock = Mock(return_value=fake_client)
+    monkeypatch.setattr(agent_module, "create_llm_client", create_mock)
+    monkeypatch.setattr(
+        agent_module.config, "PROVIDER_SETTINGS", {"anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "base_url": None}}
+    )
+
+    result = agent_module.evaluate_signals_from_data_batch(
+        [{"ticker": "AAPL", "fetched_data": {"get_rsi": {"rsi": 30}}}],
+        "buy when RSI below 35",
+        compiled_rule_set=rule_set,
+        model="test-model",
+        evaluation_type="BUY_EVAL",
+    )
+
+    assert create_mock.call_count == 1
+    assert result[0]["rationale"] == "RSI is below the threshold."

@@ -107,12 +107,13 @@ Derived paths:
     "buy_rules": config.BUY_RULES,
     "sell_rules": config.SELL_RULES,
     "temperature": parsed_temperature_or_none,
+    "explanation_mode": False,
 }
 ```
 
-`load_settings()` reads app-data `settings.json` and merges it over `config.py` defaults. It derives the model from the provider, so a stale cross-provider model in JSON is not reused. `temperature` is parsed to `float | None`; invalid values fall back to `None`.
+`load_settings()` reads app-data `settings.json` and merges it over `config.py` defaults. It derives the model from the provider, so a stale cross-provider model in JSON is not reused. `temperature` is parsed to `float | None`; invalid values fall back to `None`. `explanation_mode` is a runtime study setting, defaults to `False`, and only accepts stored JSON booleans.
 
-`save_settings()` writes non-secret settings to `settings.json`. It stores `temperature` as a string or `null`.
+`save_settings()` writes non-secret settings to `settings.json`. It stores `temperature` as a string or `null` and `explanation_mode` as a JSON boolean.
 
 API keys are not stored in `settings.json`. `save_api_keys()` updates the app-data `.env` file for `FMP_API_KEY` and the selected provider key.
 
@@ -142,15 +143,15 @@ The dashboard calls the same `run_analysis()` function in-process.
 
 1. Loads runtime settings.
 2. Creates a run timestamp.
-3. Builds shared run metadata: provider, model, and temperature.
+3. Builds shared run metadata: provider, model, temperature, and explanation mode.
 4. Plans BUY tools with `plan_tools_with_diagnostics(settings["buy_rules"])`.
 5. Plans SELL tools with `plan_tools_with_diagnostics(settings["sell_rules"])`.
 6. Prints a console warning if either rule set matched no specific tool and fell back to `get_quote`.
 7. Reads app-data `watchlist.csv` and creates BUY jobs.
 8. Reads app-data `portfolio.csv` and creates SELL jobs with holding context.
 9. Fetches each ticker's planned data with a `ThreadPoolExecutor`, capped by `MAX_WORKERS = 3`.
-10. Evaluates all BUY fetched jobs deterministically and requests rationale text.
-11. Evaluates all SELL fetched jobs deterministically and requests rationale text.
+10. Evaluates all BUY fetched jobs deterministically and, when Explanation Mode is on, requests rationale text.
+11. Evaluates all SELL fetched jobs deterministically and, when Explanation Mode is on, requests rationale text.
 12. Merges each job's metadata into the returned signal.
 13. Adds `run_elapsed_seconds` to each signal.
 14. Writes all signals through `database.write_signals()`.
@@ -164,6 +165,7 @@ BUY job metadata includes:
 - `provider`
 - `model`
 - `temperature`
+- `explanation_mode`
 
 SELL job metadata adds:
 
@@ -214,6 +216,7 @@ Tool functions return dictionaries. On HTTP, permission, quota, empty-response, 
 - `compiled_rule_set`
 - `model`
 - `evaluation_type`
+- keyword-only `explanation_mode`, defaulting to `True` for existing direct callers
 
 `compiled_rule_set` is required. Omitting it is a `TypeError`, so callers cannot silently fall back to model-decided signals.
 
@@ -236,6 +239,8 @@ The deterministic evaluator owns `signal` and `triggering_rule`. The LLM rationa
 ```
 
 The rationale parser extracts the JSON array and maps rows back to input tickers. It does not accept signal or triggering-rule changes from the model.
+
+When `explanation_mode=False`, the deterministic evaluation still runs and returns the same row shape, but the provider client is not constructed and no rationale prompt is sent. Successful rows store `rationale = None`, while `signal`, `triggering_rule`, and `data_fetched` remain populated from the deterministic fetched payload. `ERROR` rows continue to keep their diagnostic message in `rationale`.
 
 If a ticker is omitted, JSON parsing fails, the provider asks for tools, or the provider returns no text, the deterministic signal remains in place and the rationale records the provider error. If a compiled metric is missing, non-numeric, or an error dict, the result for that ticker is:
 
@@ -282,12 +287,13 @@ The `signals` table is created with:
 - `triggering_rule`
 - `temperature`
 - `run_elapsed_seconds`
+- `explanation_mode`
 
 `_ensure_column()` adds provider/model/runtime and hardening columns to older databases. No existing column is dropped or renamed.
 
 `write_signals()` JSON-serializes `data_fetched`, inserts all audit fields, and commits the batch. `read_latest_signals()` and `read_filtered_signals()` select columns in the same order consumed by `_row_to_dict()`.
 
-`rules_applied` stores the exact BUY or SELL rule block used for the row. `triggering_rule` stores the code-derived governing rule. `temperature` is nullable.
+`rules_applied` stores the exact BUY or SELL rule block used for the row. `triggering_rule` stores the code-derived governing rule. `temperature` is nullable. `explanation_mode` is nullable for pre-feature rows; `NULL` means the row predates the mode toggle and the condition is unknown.
 
 ## 11. Dashboard
 
@@ -304,7 +310,7 @@ It renders:
 
 `Latest Run` reads `read_latest_signals()`, splits rows through `dashboard.logic.split_signal_groups()`, and renders watchlist BUY/SKIP cards and portfolio SELL/HOLD cards.
 
-`History` requires at least one filter before calling `read_filtered_signals()`.
+`History` requires at least one filter before calling `read_filtered_signals()`. Its mode filter supports All, Transparent, and Opaque; selecting Transparent or Opaque counts as a filter on its own, while All leaves pre-feature `NULL` rows included when another filter is set.
 
 `Metrics Reference` is static guidance. It does not call FMP, contact an LLM provider, run analysis, or read/write SQLite at render time.
 
@@ -313,6 +319,7 @@ It renders:
 - provider
 - derived model display
 - optional temperature
+- Explanation Mode toggle
 - FMP/provider API keys
 - BUY rules
 - SELL rules
@@ -374,5 +381,6 @@ Tests are offline: they use fake HTTP clients, fake LLM clients, dummy keys, tem
 - FMP data availability and quota depend on the configured API plan.
 - `triggering_rule` is code-derived from the approved compiled rule set.
 - Lower temperature can reduce rationale wording variation, but does not affect signal selection.
+- Opaque runs skip rationale generation and can complete faster than transparent runs; this latency difference is a possible responsiveness confound in study interpretation.
 - The planner maps recognized wording to fixed tool sets; novel or ambiguous wording may fall back to quote-only data until planner keywords are expanded.
 - The dashboard provides latest-run display and filtered history rows, not full historical analytics.

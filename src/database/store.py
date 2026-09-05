@@ -34,7 +34,8 @@ def _init(conn: sqlite3.Connection) -> None:
             rules_applied TEXT,
             triggering_rule TEXT,
             temperature REAL,
-            run_elapsed_seconds REAL
+            run_elapsed_seconds REAL,
+            explanation_mode INTEGER
         )
     """)
     _ensure_column(conn, "provider", "TEXT")
@@ -43,6 +44,7 @@ def _init(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "triggering_rule", "TEXT")
     _ensure_column(conn, "temperature", "REAL")
     _ensure_column(conn, "run_elapsed_seconds", "REAL")
+    _ensure_column(conn, "explanation_mode", "INTEGER")
     conn.commit()
 
 
@@ -61,8 +63,8 @@ def write_signals(signals: list[dict]) -> None:
         INSERT INTO signals
             (run_date, ticker, signal_type, signal, rationale, data_fetched,
             entry_price, provider, model, rules_applied, triggering_rule,
-            temperature, run_elapsed_seconds)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            temperature, run_elapsed_seconds, explanation_mode)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -79,6 +81,7 @@ def write_signals(signals: list[dict]) -> None:
                 s.get("triggering_rule"),
                 s.get("temperature"),
                 s.get("run_elapsed_seconds"),
+                _mode_to_int(s.get("explanation_mode")),
             )
             for s in signals
         ],
@@ -95,7 +98,7 @@ def read_latest_signals() -> list[dict]:
         """
         SELECT run_date, ticker, signal_type, signal, rationale,
         data_fetched, entry_price, provider, model, rules_applied,
-        triggering_rule, temperature, run_elapsed_seconds
+        triggering_rule, temperature, run_elapsed_seconds, explanation_mode
         FROM signals
         WHERE run_date = (SELECT MAX(run_date) FROM signals)
         ORDER BY signal_type, ticker
@@ -109,12 +112,14 @@ def read_filtered_signals(
     run_date: str | None = None,
     signal_type: str | None = None,
     ticker: str | None = None,
+    explanation_mode: str | None = None,
 ) -> list[dict]:
     """
     Return signals matching the provided filters.
     At least one filter must be supplied — never fetches unbounded set.
     """
-    if not any([run_date, signal_type, ticker]):
+    mode = explanation_mode if explanation_mode in {"transparent", "opaque"} else None
+    if not any([run_date, signal_type, ticker, mode]):
         return []
 
     clauses = []
@@ -129,6 +134,10 @@ def read_filtered_signals(
     if ticker:
         clauses.append("ticker = ?")
         params.append(ticker.upper().strip())
+    if mode == "transparent":
+        clauses.append("explanation_mode = 1")
+    elif mode == "opaque":
+        clauses.append("explanation_mode = 0")
 
     where = " AND ".join(clauses)
     conn = _connect()
@@ -137,7 +146,7 @@ def read_filtered_signals(
         f"""
         SELECT run_date, ticker, signal_type, signal, rationale,
         data_fetched, entry_price, provider, model, rules_applied,
-        triggering_rule, temperature, run_elapsed_seconds
+        triggering_rule, temperature, run_elapsed_seconds, explanation_mode
         FROM signals
         WHERE {where}
         ORDER BY run_date DESC, signal_type, ticker
@@ -181,4 +190,21 @@ def _row_to_dict(r: tuple) -> dict:
         "triggering_rule": r[10],
         "temperature": r[11],
         "run_elapsed_seconds": r[12],
+        "explanation_mode": _int_to_mode(r[13]),
     }
+
+
+def _mode_to_int(value) -> int | None:
+    if value is True:
+        return 1
+    if value is False:
+        return 0
+    return None
+
+
+def _int_to_mode(value) -> bool | None:
+    if value == 1:
+        return True
+    if value == 0:
+        return False
+    return None

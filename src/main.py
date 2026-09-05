@@ -132,6 +132,7 @@ def _evaluate_group(
     model: str,
     evaluation_type: str,
     compiled_rule_set: dict,
+    explanation_mode: bool,
 ) -> tuple[list[dict], float]:
     if not fetched_jobs:
         return [], 0.0
@@ -148,6 +149,7 @@ def _evaluate_group(
         compiled_rule_set=compiled_rule_set,
         model=model,
         evaluation_type=evaluation_type,
+        explanation_mode=explanation_mode,
     )
     elapsed = perf_counter() - started
     for signal, item in zip(signals, fetched_jobs):
@@ -185,6 +187,7 @@ def run_analysis() -> dict:
         "provider": settings["provider"],
         "model": settings["model"],
         "temperature": settings["temperature"],
+        "explanation_mode": settings.get("explanation_mode") is True,
     }
     rule_state = prepare_rule_set(settings)
     if not rule_state["ok"]:
@@ -279,6 +282,7 @@ def run_analysis() -> dict:
         model=settings["model"],
         evaluation_type="BUY_EVAL",
         compiled_rule_set=compiled_rule_set,
+        explanation_mode=settings.get("explanation_mode") is True,
     )
     print(f"  BUY_EVAL batch:  {len(buy_signals)} signals ({buy_eval_elapsed:.1f}s)", flush=True)
     sell_signals, sell_eval_elapsed = _evaluate_group(
@@ -287,6 +291,7 @@ def run_analysis() -> dict:
         model=settings["model"],
         evaluation_type="SELL_EVAL",
         compiled_rule_set=compiled_rule_set,
+        explanation_mode=settings.get("explanation_mode") is True,
     )
     print(f"  SELL_EVAL batch: {len(sell_signals)} signals ({sell_eval_elapsed:.1f}s)", flush=True)
     all_signals = buy_signals + sell_signals

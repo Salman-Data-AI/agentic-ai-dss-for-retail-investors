@@ -10,6 +10,8 @@ from dashboard.logic import (
     chunk_metrics,
     describe_rule_gate,
     escape_markdown_math,
+    explanation_mode_filter_value,
+    explanation_mode_label,
     format_metric_value,
     split_signal_groups,
 )
@@ -65,6 +67,7 @@ def test_build_history_rows():
                 "provider": "anthropic",
                 "model": "claude-test",
                 "run_elapsed_seconds": 12.345,
+                "explanation_mode": False,
             },
             {
                 "run_date": "2026-07-02",
@@ -76,6 +79,7 @@ def test_build_history_rows():
                 "provider": None,
                 "model": None,
                 "run_elapsed_seconds": None,
+                "explanation_mode": True,
             },
         ]
     )
@@ -88,6 +92,7 @@ def test_build_history_rows():
             "Company": "Apple Inc.",
             "Type": "BUY eval",
             "Signal": "BUY",
+            "Mode": "Opaque",
             "Provider": "anthropic",
             "Model": "claude-test",
             "Rationale": "",
@@ -99,6 +104,7 @@ def test_build_history_rows():
             "Company": "JPM",
             "Type": "SELL eval",
             "Signal": "HOLD",
+            "Mode": "Transparent",
             "Provider": "",
             "Model": "",
             "Rationale": "steady",
@@ -124,6 +130,15 @@ def test_build_history_rows_normalizes_legacy_watchlist_sell():
 
     assert rows[0]["Signal"] == "SKIP"
     assert "Legacy stored signal 'SELL' is shown as 'SKIP'" in rows[0]["Rationale"]
+
+
+def test_explanation_mode_helpers():
+    assert explanation_mode_label(True) == "Transparent"
+    assert explanation_mode_label(False) == "Opaque"
+    assert explanation_mode_label(None) == "Unknown"
+    assert explanation_mode_filter_value("All") is None
+    assert explanation_mode_filter_value("Transparent") == "transparent"
+    assert explanation_mode_filter_value("Opaque") == "opaque"
 
 
 def test_escape_markdown_math_preserves_dollar_prices_as_text():
