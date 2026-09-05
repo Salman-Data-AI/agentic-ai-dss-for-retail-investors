@@ -36,3 +36,18 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDi
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
 
+[Code]
+// The [Files] entry above only adds/overwrites files; it never removes files
+// that existed in a previous install but are absent from the current build
+// (e.g. PyInstaller binaries dropped by a packaging fix). Leftover files in
+// {app} can shadow the new build's modules at import time, so wipe {app}
+// before laying down the new copy on every install, including upgrades.
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    if DirExists(ExpandConstant('{app}')) then
+      DelTree(ExpandConstant('{app}'), True, True, True);
+  end;
+end;
+

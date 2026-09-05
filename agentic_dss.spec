@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import (
     collect_dynamic_libs,
     collect_submodules,
     copy_metadata,
+    get_module_file_attribute,
 )
 
 
@@ -21,6 +22,27 @@ def runtime_submodule(name):
         "._pyinstaller.tests",
     )
     return not any(part in name for part in excluded_parts)
+
+
+# charset_normalizer ships mypyc-compiled speedups (cd/md plus the shared md__mypyc
+# module). PyInstaller collects them under charset_normalizer/, where md__mypyc is no
+# longer importable, so the whole package fails to import and requests silently falls
+# back to no character detection. Drop the speedups and collect the pure-Python
+# implementations they shadow instead.
+charset_normalizer_speedups = ("cd", "md", "md__mypyc")
+
+
+def charset_normalizer_speedup_module(entry):
+    """Return the module name of a bundled charset_normalizer speedup, else None."""
+    dest = os.path.normpath(entry[0])
+    if os.path.basename(os.path.dirname(dest)) != "charset_normalizer":
+        return None
+    basename = os.path.basename(dest)
+    if not basename.endswith((".pyd", ".dll")):
+        return None
+    stem = basename.split(".", 1)[0]
+    return stem if stem in charset_normalizer_speedups else None
+
 
 datas = []
 excluded_data_files = {
@@ -95,6 +117,28 @@ a = Analysis(
     noarchive=True,
     optimize=0,
 )
+shadowed_modules = set()
+for toc_name in ("binaries", "datas"):
+    kept = []
+    for entry in getattr(a, toc_name):
+        module = charset_normalizer_speedup_module(entry)
+        if module is None:
+            kept.append(entry)
+        else:
+            shadowed_modules.add(module)
+    setattr(a, toc_name, kept)
+
+charset_normalizer_dir = os.path.dirname(get_module_file_attribute("charset_normalizer"))
+collected_modules = {os.path.splitext(os.path.normpath(entry[0]))[0] for entry in a.datas}
+for module in sorted(shadowed_modules):
+    source = os.path.join(charset_normalizer_dir, f"{module}.py")
+    if not os.path.isfile(source):
+        # md__mypyc is a mypyc build artefact with no pure-Python counterpart.
+        continue
+    if os.path.join("charset_normalizer", module) in collected_modules:
+        continue
+    a.pure.append((f"charset_normalizer.{module}", source, "PYMODULE"))
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
