@@ -29,6 +29,7 @@ SETTINGS_KEYS = (
     "buy_rules",
     "sell_rules",
     "temperature",
+    "explanation_mode",
     "compiled_rule_set",
     "compiled_rule_fingerprint",
     "rule_approval_state",
@@ -45,6 +46,7 @@ def default_settings() -> dict:
         "buy_rules": config.BUY_RULES,
         "sell_rules": config.SELL_RULES,
         "temperature": _parse_temperature(getattr(config, "TEMPERATURE", None)),
+        "explanation_mode": False,
         "compiled_rule_set": None,
         "compiled_rule_fingerprint": "",
         "rule_approval_state": RULE_APPROVAL_UNVALIDATED,
@@ -78,6 +80,10 @@ def load_settings() -> dict:
             if key in data:
                 settings[key] = _parse_temperature(data[key])
             continue
+        if key == "explanation_mode":
+            if isinstance(data.get(key), bool):
+                settings[key] = data[key]
+            continue
         if key == "compiled_rule_set":
             if isinstance(data.get(key), dict):
                 settings[key] = data[key]
@@ -105,6 +111,8 @@ def save_settings(values: dict) -> None:
         if key == "temperature":
             parsed_temperature = _parse_temperature(values.get(key, current[key]))
             payload[key] = None if parsed_temperature is None else str(parsed_temperature)
+        elif key == "explanation_mode":
+            payload[key] = values.get(key, current[key]) is True
         elif key == "compiled_rule_set":
             rule_set = values.get(key, current[key])
             payload[key] = rule_set if isinstance(rule_set, dict) else None

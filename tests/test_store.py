@@ -21,6 +21,7 @@ def test_write_signals_initializes_table_and_round_trips(temp_db_path):
             "triggering_rule": "RSI is below 35.",
             "temperature": 0.0,
             "run_elapsed_seconds": 12.34,
+            "explanation_mode": True,
         }
     ]
 
@@ -56,6 +57,15 @@ def test_write_signals_preserves_null_metric_values_in_data_fetched(temp_db_path
     assert round_tripped["get_key_metrics"]["eps_ttm"] is None
     assert round_tripped["get_key_metrics"]["pe_ratio"] != 0
     assert round_tripped["get_key_metrics"]["eps_ttm"] != 0
+
+
+def test_fresh_database_creates_explanation_mode_column(temp_db_path):
+    store.write_signals([])
+
+    with sqlite3.connect(temp_db_path) as conn:
+        columns = {row[1]: row[2] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+
+    assert columns["explanation_mode"] == "INTEGER"
 
 
 def test_read_latest_signals_returns_only_latest_run_ordered_by_type_then_ticker(temp_db_path):
@@ -170,9 +180,15 @@ def test_init_migrates_legacy_table_and_preserves_old_rows(temp_db_path):
     with sqlite3.connect(temp_db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
 
-    assert {"provider", "model", "rules_applied", "triggering_rule", "temperature", "run_elapsed_seconds"}.issubset(
-        columns
-    )
+    assert {
+        "provider",
+        "model",
+        "rules_applied",
+        "triggering_rule",
+        "temperature",
+        "run_elapsed_seconds",
+        "explanation_mode",
+    }.issubset(columns)
 
     old_rows = store.read_filtered_signals(run_date="2026-07-01 09:00:00")
     latest = store.read_latest_signals()
@@ -183,9 +199,64 @@ def test_init_migrates_legacy_table_and_preserves_old_rows(temp_db_path):
     assert old_rows[0]["triggering_rule"] is None
     assert old_rows[0]["temperature"] is None
     assert old_rows[0]["run_elapsed_seconds"] is None
+    assert old_rows[0]["explanation_mode"] is None
     assert latest[0]["provider"] == "openai"
     assert latest[0]["model"] == "gpt-test"
     assert latest[0]["rules_applied"] == "new rules"
     assert latest[0]["triggering_rule"] == "new rule"
     assert latest[0]["temperature"] == 0.0
     assert latest[0]["run_elapsed_seconds"] == 3.21
+    assert latest[0]["explanation_mode"] is None
+
+
+def test_explanation_mode_round_trip_and_filters(temp_db_path):
+    base = {
+        "signal_type": "BUY_EVAL",
+        "signal": "BUY",
+        "data_fetched": {"name": "Company", "metric": 1},
+        "entry_price": None,
+        "provider": "openai",
+        "model": "gpt-test",
+        "rules_applied": "rules",
+        "triggering_rule": "rule",
+        "temperature": None,
+        "run_elapsed_seconds": 1.0,
+    }
+    store.write_signals(
+        [
+            {
+                **base,
+                "run_date": "2026-07-01 09:00:00",
+                "ticker": "OPAQUE",
+                "rationale": None,
+                "explanation_mode": False,
+            },
+            {
+                **base,
+                "run_date": "2026-07-02 09:00:00",
+                "ticker": "TRANS",
+                "rationale": "explained",
+                "explanation_mode": True,
+            },
+            {
+                **base,
+                "run_date": "2026-07-03 09:00:00",
+                "ticker": "LEGACY",
+                "rationale": "legacy",
+            },
+        ]
+    )
+
+    latest = store.read_latest_signals()
+    opaque = store.read_filtered_signals(explanation_mode="opaque")
+    transparent = store.read_filtered_signals(explanation_mode="transparent")
+    all_rows = store.read_filtered_signals(signal_type="BUY_EVAL")
+
+    assert latest[0]["ticker"] == "LEGACY"
+    assert latest[0]["explanation_mode"] is None
+    assert [row["ticker"] for row in opaque] == ["OPAQUE"]
+    assert opaque[0]["explanation_mode"] is False
+    assert opaque[0]["rationale"] is None
+    assert [row["ticker"] for row in transparent] == ["TRANS"]
+    assert transparent[0]["explanation_mode"] is True
+    assert {row["ticker"] for row in all_rows} == {"OPAQUE", "TRANS", "LEGACY"}

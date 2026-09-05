@@ -17,6 +17,7 @@ def test_load_settings_merges_defaults_and_handles_missing_or_corrupt_file():
         "buy_rules": config.BUY_RULES,
         "sell_rules": config.SELL_RULES,
         "temperature": None,
+        "explanation_mode": False,
         "compiled_rule_set": None,
         "compiled_rule_fingerprint": "",
         "rule_approval_state": "unvalidated",
@@ -33,6 +34,7 @@ def test_load_settings_merges_defaults_and_handles_missing_or_corrupt_file():
     assert loaded["buy_rules"] == config.BUY_RULES
     assert loaded["sell_rules"] == config.SELL_RULES
     assert loaded["temperature"] is None
+    assert loaded["explanation_mode"] is False
     assert loaded["compiled_rule_set"] is None
     assert loaded["compiled_rule_fingerprint"] == ""
     assert loaded["rule_approval_state"] == "unvalidated"
@@ -50,6 +52,7 @@ def test_save_settings_round_trip_and_keeps_keys_out_of_json():
             "buy_rules": "buy from ui",
             "sell_rules": "sell from ui",
             "temperature": "0.0",
+            "explanation_mode": True,
             "FMP_API_KEY": "must-not-be-saved",
         }
     )
@@ -60,6 +63,7 @@ def test_save_settings_round_trip_and_keeps_keys_out_of_json():
         "buy_rules": "buy from ui",
         "sell_rules": "sell from ui",
         "temperature": 0.0,
+        "explanation_mode": True,
         "compiled_rule_set": None,
         "compiled_rule_fingerprint": "",
         "rule_approval_state": "unvalidated",
@@ -67,6 +71,7 @@ def test_save_settings_round_trip_and_keeps_keys_out_of_json():
     raw = json.loads(Path(settings.settings_path()).read_text(encoding="utf-8"))
     assert "FMP_API_KEY" not in raw
     assert raw["temperature"] == "0.0"
+    assert raw["explanation_mode"] is True
     assert raw["rule_approval_state"] == "unvalidated"
 
 
@@ -130,6 +135,26 @@ def test_load_settings_falls_back_to_provider_default_for_bad_temperature():
     )
 
     assert settings.load_settings()["temperature"] is None
+
+
+def test_load_settings_parses_explanation_mode_defensively():
+    path = Path(settings.settings_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    for value in [None, "yes", 2, {}]:
+        path.write_text(json.dumps({"explanation_mode": value}), encoding="utf-8")
+        assert settings.load_settings()["explanation_mode"] is False
+
+    path.write_text(json.dumps({"explanation_mode": True}), encoding="utf-8")
+    assert settings.load_settings()["explanation_mode"] is True
+
+
+def test_save_settings_round_trips_explanation_mode_false():
+    settings.save_settings({"explanation_mode": False})
+
+    raw = json.loads(Path(settings.settings_path()).read_text(encoding="utf-8"))
+    assert raw["explanation_mode"] is False
+    assert settings.load_settings()["explanation_mode"] is False
 
 
 def test_save_settings_ignores_blocked_legacy_tmp_filename():

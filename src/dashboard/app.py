@@ -25,6 +25,7 @@ from dashboard.logic import (
     chunk_metrics,
     describe_rule_gate,
     escape_markdown_math,
+    explanation_mode_filter_value,
     split_signal_groups,
 )
 from database import (
@@ -558,6 +559,7 @@ def _save_rule_editor_settings(
     buy_rules: str,
     sell_rules: str,
     temperature: str,
+    explanation_mode: bool,
     current: dict,
 ) -> None:
     next_values = {
@@ -566,6 +568,7 @@ def _save_rule_editor_settings(
         "buy_rules": buy_rules,
         "sell_rules": sell_rules,
         "temperature": temperature.strip() or None,
+        "explanation_mode": explanation_mode,
     }
     if buy_rules != current["buy_rules"] or sell_rules != current["sell_rules"]:
         next_values.update(
@@ -621,8 +624,13 @@ def _render_card(s: dict) -> None:
         if model:
             caption += f" · `{model}`"
         st.caption(caption)
-        with st.expander("Why this signal?"):
-            st.markdown(escape_markdown_math(s.get("rationale") or "No rationale available."))
+        triggering_rule = s.get("triggering_rule")
+        if isinstance(triggering_rule, str) and triggering_rule.strip():
+            st.caption(f"Governing rule: {escape_markdown_math(triggering_rule)}")
+        rationale = s.get("rationale")
+        if isinstance(rationale, str) and rationale.strip():
+            with st.expander("Why this signal?"):
+                st.markdown(escape_markdown_math(rationale))
 
         data = {k: v for k, v in s.get("data_fetched", {}).items() if k not in ("ticker", "name")}
         if data:
@@ -744,7 +752,7 @@ if selected_view == "History":
     run_dates = read_run_dates()
     all_tickers = read_tickers()
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         selected_date = st.selectbox(
@@ -764,19 +772,27 @@ if selected_view == "History":
             options=["— select —"] + all_tickers,
             index=0,
         )
+    with col4:
+        selected_mode = st.selectbox(
+            "Explanation mode",
+            options=["All", "Transparent", "Opaque"],
+            index=0,
+        )
 
     # Resolve filter values — treat placeholder as None
     f_date = selected_date if selected_date != "— select —" else None
     f_type = selected_type if selected_type != "— select —" else None
     f_ticker = selected_ticker if selected_ticker != "— select —" else None
+    f_mode = explanation_mode_filter_value(selected_mode)
 
-    if not any([f_date, f_type, f_ticker]):
-        st.info("Choose a run date, signal type, or ticker above to view history.")
+    if not any([f_date, f_type, f_ticker, f_mode]):
+        st.info("Choose a run date, signal type, ticker, or explanation mode above to view history.")
     else:
         results = read_filtered_signals(
             run_date=f_date,
             signal_type=f_type,
             ticker=f_ticker,
+            explanation_mode=f_mode,
         )
 
         if not results:
@@ -835,6 +851,15 @@ if selected_view == "Settings":
         value=temperature_value,
         help="Optional. Blank uses the provider default; lower values may reduce variation but do not guarantee identical outputs.",
     )
+    explanation_mode = st.toggle(
+        "Explanation Mode",
+        value=settings.get("explanation_mode") is True,
+        help=(
+            "When enabled, each run generates a plain-language rationale for every signal and displays it on the "
+            "signal card. When disabled, no rationale is generated and cards show the signal, the governing rule, "
+            "and the underlying data only. Error messages are always shown."
+        ),
+    )
 
     provider_key_env = config.PROVIDER_SETTINGS[selected_provider]["api_key_env"]
     fmp_label = "FMP API key"
@@ -871,6 +896,7 @@ if selected_view == "Settings":
                     buy_rules=buy_rules,
                     sell_rules=sell_rules,
                     temperature=temperature,
+                    explanation_mode=explanation_mode,
                     current=settings,
                 )
                 if fmp_api_key.strip() or provider_api_key.strip():
@@ -958,6 +984,7 @@ if selected_view == "Settings":
                     buy_rules=buy_rules,
                     sell_rules=sell_rules,
                     temperature=temperature,
+                    explanation_mode=explanation_mode,
                     current=settings,
                 )
                 save_api_keys(

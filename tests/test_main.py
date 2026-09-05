@@ -47,7 +47,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
         fetched.append({"ticker": ticker, "plan": plan})
         return {"get_quote": {"ticker": ticker, "name": f"{ticker} Corp"}}
 
-    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type, *, explanation_mode):
         calls.append(
             {
                 "items": items,
@@ -55,6 +55,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
                 "model": model,
                 "evaluation_type": evaluation_type,
                 "compiled_rule_set": compiled_rule_set,
+                "explanation_mode": explanation_mode,
             }
         )
         return [
@@ -94,6 +95,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
             "buy_rules": "buy rules",
             "sell_rules": "sell rules",
             "temperature": 0.0,
+            "explanation_mode": True,
         },
     )
 
@@ -104,10 +106,12 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert calls[0]["model"] == "test-model"
     assert calls[0]["evaluation_type"] == "BUY_EVAL"
     assert calls[0]["compiled_rule_set"] == {"buy_clauses": [], "sell_clauses": []}
+    assert calls[0]["explanation_mode"] is True
     assert calls[0]["items"][0]["fetched_data"] == {"get_quote": {"ticker": "AAPL", "name": "AAPL Corp"}}
     assert [item["ticker"] for item in calls[1]["items"]] == ["JPM"]
     assert calls[1]["rules"] == "sell rules"
     assert calls[1]["evaluation_type"] == "SELL_EVAL"
+    assert calls[1]["explanation_mode"] is True
     assert calls[1]["items"][0]["fetched_data"]["holding"] == {
         "entry_price": 195.5,
         "qty": 10,
@@ -121,6 +125,7 @@ def test_main_orchestrates_buy_and_sell_evaluations(workspace_tmp_path, monkeypa
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"test-model"}
     assert {record["temperature"] for record in written} == {0.0}
+    assert {record["explanation_mode"] for record in written} == {True}
     assert written[0]["rules_applied"] == "buy rules"
     assert written[1]["rules_applied"] == "buy rules"
     assert written[2]["rules_applied"] == "sell rules"
@@ -156,19 +161,21 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
             "buy_rules": "runtime buy rules",
             "sell_rules": "runtime sell rules",
             "temperature": None,
+            "explanation_mode": False,
         }
     )
 
     calls = []
     written = []
 
-    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type, *, explanation_mode):
         calls.append(
             {
                 "tickers": [item["ticker"] for item in items],
                 "rules": rules,
                 "model": model,
                 "evaluation_type": evaluation_type,
+                "explanation_mode": explanation_mode,
             }
         )
         return [
@@ -207,16 +214,19 @@ def test_run_analysis_uses_settings_changed_since_import(workspace_tmp_path, mon
         "rules": "runtime buy rules",
         "model": "gpt-5.4-nano",
         "evaluation_type": "BUY_EVAL",
+        "explanation_mode": False,
     }
     assert calls[1] == {
         "tickers": ["MSFT"],
         "rules": "runtime sell rules",
         "model": "gpt-5.4-nano",
         "evaluation_type": "SELL_EVAL",
+        "explanation_mode": False,
     }
     assert {record["provider"] for record in written} == {"openai"}
     assert {record["model"] for record in written} == {"gpt-5.4-nano"}
     assert {record["temperature"] for record in written} == {None}
+    assert {record["explanation_mode"] for record in written} == {False}
     assert written[0]["rules_applied"] == "runtime buy rules"
     assert written[1]["rules_applied"] == "runtime sell rules"
 
@@ -233,7 +243,7 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
     calls = []
     written = []
 
-    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type):
+    def fake_evaluate_batch(items, rules, compiled_rule_set, model, evaluation_type, *, explanation_mode):
         calls.extend(item["ticker"] for item in items)
         return [
             {
@@ -272,6 +282,7 @@ def test_run_analysis_skips_blank_watchlist_and_portfolio_tickers(workspace_tmp_
             "buy_rules": "buy rules",
             "sell_rules": "sell rules",
             "temperature": None,
+            "explanation_mode": False,
         },
     )
 
@@ -319,6 +330,7 @@ def test_run_analysis_blocks_before_fetch_when_rules_are_not_approved(workspace_
             "buy_rules": "buy rules",
             "sell_rules": "sell rules",
             "temperature": None,
+            "explanation_mode": False,
         },
     )
 
@@ -379,6 +391,7 @@ def test_run_analysis_reproducible_for_fixed_fetched_data(workspace_tmp_path, mo
             "buy_rules": "PE below 20",
             "sell_rules": "RSI above 70",
             "temperature": 0.7,
+            "explanation_mode": True,
         },
     )
     monkeypatch.setattr(

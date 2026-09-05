@@ -7,7 +7,7 @@ Agentic DSS for Retail Investors is a Python-based decision support system that 
 The system has four main layers:
 
 - Input and configuration: plain-English investment rules plus CSV watchlist and portfolio files.
-- Agent orchestration: the app compiles and approves rule text, plans required tools once per rule set, fetches those metrics for each ticker, evaluates signals in code, and asks the selected LLM for rationale text.
+- Agent orchestration: the app compiles and approves rule text, plans required tools once per rule set, fetches those metrics for each ticker, evaluates signals in code, and asks the selected LLM for rationale text only when Explanation Mode is enabled.
 - Market data tools: FMP-backed functions fetch quote, technical, fundamental, profile, performance, analyst, and earnings data.
 - Persistence and presentation: SQLite stores each run, and Streamlit displays the latest results.
 
@@ -62,8 +62,8 @@ Responsibilities:
 - Surface fail-closed compile blocks in the dashboard when a clause cannot bind to a supported metric.
 - Fetch the planned metrics for each ticker.
 - Fetch ticker data in parallel using a small worker pool.
-- Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group, passing the approved compiled rule set.
-- Add metadata such as `signal_type`, `run_date`, provider, model, optional temperature, rule text, company name, and entry price.
+- Call `evaluate_signals_from_data_batch()` once for the BUY group and once for the SELL group, passing the approved compiled rule set and runtime explanation-mode setting.
+- Add metadata such as `signal_type`, `run_date`, provider, model, optional temperature, explanation mode, rule text, company name, and entry price.
 - Persist all signals through `write_signals()`.
 
 The pipeline produces two categories of output:
@@ -103,13 +103,13 @@ Automated tests mock provider clients for compile, state-machine, gate, and dete
 
 `src/agent/tool_planner.py::plan_tools_for_rules(rules)` converts each rule string into a fixed tool plan for that run. The BUY plan is reused for every watchlist ticker, and the SELL plan is reused for every portfolio holding. `plan_tools_with_diagnostics(rules)` returns the same plan plus a flag for the silent quote-fallback case, so `main.py` can warn when a rule set did not map to any specific data tool.
 
-`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, compiled_rule_set, model, evaluation_type)` requires an approved compiled rule set and evaluates a group of prefetched ticker payloads deterministically before making a provider call for rationale only. The deterministic evaluator owns `signal` and `triggering_rule`; the model cannot override them.
+`src/agent/agent.py::evaluate_signals_from_data_batch(items, rules, compiled_rule_set, model, evaluation_type, *, explanation_mode=True)` requires an approved compiled rule set and evaluates a group of prefetched ticker payloads deterministically before making any optional provider call for rationale only. The deterministic evaluator owns `signal` and `triggering_rule`; the model cannot override them.
 
 The flow:
 
 1. Flattens the fetched market-data payload into numeric metrics, including derived metrics such as `gain_loss_pct`, `price_above_52_week_low_pct`, and `price_below_52_week_high_pct`.
 2. Applies `deterministic_evaluator.evaluate_rule_set()` with the approved compiled rule set.
-3. Calls the selected provider with no tools exposed for rationale text only.
+3. If `explanation_mode=True`, calls the selected provider with no tools exposed for rationale text only.
 4. Parses the final JSON array and maps each rationale back to its input ticker.
 
 The rationale step is instructed to return one object per ticker with exactly this shape:
@@ -123,6 +123,8 @@ The rationale step is instructed to return one object per ticker with exactly th
   }
 }
 ```
+
+When `explanation_mode=False`, the explanation layer is skipped entirely: no rationale prompt is built, no provider client is created, and successful rows store `rationale = NULL`. The deterministic `signal`, `triggering_rule`, and fetched-data payload are still populated. Error rows keep their diagnostic text in `rationale` so failures remain visible to participants.
 
 The `evaluation_type` argument selects the deterministic signal contract. `BUY_EVAL` yields only `BUY` or `SKIP`; `SELL_EVAL` yields only `SELL` or `HOLD`. `triggering_rule` remains a single text value because the database column is still `TEXT`; the deterministic evaluator also keeps clause outcomes in memory for rationale generation and future UI work. Temperature now affects rationale wording only, not signal selection. If the rationale call fails, the deterministic signal remains in place with an error-style rationale.
 
@@ -197,7 +199,8 @@ CREATE TABLE IF NOT EXISTS signals (
     rules_applied TEXT,
     triggering_rule TEXT,
     temperature  REAL,
-    run_elapsed_seconds REAL
+    run_elapsed_seconds REAL,
+    explanation_mode INTEGER
 )
 ```
 
@@ -205,12 +208,13 @@ Key functions:
 
 - `write_signals(signals)`: initializes the database if needed and inserts a batch of signal records.
 - `read_latest_signals()`: reads all signals from the most recent run date, ordered by signal type and ticker.
+- `read_filtered_signals()`: reads History rows by run date, signal type, ticker, and optional mode filter (`transparent` or `opaque`).
 
 The agent does not read from the database. The database exists for persistence, auditability, and dashboard display.
 
 `data_fetched` is JSON-serialized as text. Nested dictionaries and lists from bundle tools are preserved on write and restored on read; no schema change is required for nested tool outputs.
 
-`rules_applied` stores the exact BUY or SELL rule block used for that signal row, so later rule edits do not change the audit context for old rows. `triggering_rule` stores the code-derived governing rule. `temperature` is nullable because the default configuration omits the parameter and lets the provider use its default.
+`rules_applied` stores the exact BUY or SELL rule block used for that signal row, so later rule edits do not change the audit context for old rows. `triggering_rule` stores the code-derived governing rule. `temperature` is nullable because the default configuration omits the parameter and lets the provider use its default. `explanation_mode` is nullable for pre-feature rows; `NULL` means the row predates the toggle and should be treated as an unknown study condition.
 
 ### Dashboard: `src/dashboard/app.py`
 
@@ -219,27 +223,27 @@ The dashboard is a Streamlit interface for running and reviewing analyses.
 Responsibilities:
 
 - Display the selected provider and model.
-- Provide `Validate Metrics` and `Approve Rule Set` controls in Settings, plus a dashboard-level gated `Run Analysis` control.
+- Provide `Validate Metrics`, `Approve Rule Set`, and Explanation Mode controls in Settings, plus a dashboard-level gated `Run Analysis` control.
 - Call `run_analysis()` in process only after the current compiled rule set is approved.
 - Read the latest signals from SQLite.
 - Split results into watchlist BUY evaluations and portfolio SELL evaluations.
 - Normalize legacy stored signal labels for display.
-- Render each result as a card with signal, rationale, and underlying data.
+- Render each result as a card with signal, optional stored rationale, governing rule, and underlying data.
 - Render a static Metrics Reference tab from hardcoded reference rows and a one-time AAPL FMP snapshot.
 - Provide a Settings tab for provider/rule/API-key/CSV editing, rule validation, locked-rule review, and approval.
 
 The dashboard uses progressive disclosure:
 
 - Signal and ticker are visible immediately.
-- Rationale is shown in an expander.
+- Rationale is shown in an expander only when the stored row has non-empty rationale text.
 - Data used is shown in a separate expander. Flat scalar values render as compact metric columns; nested bundle values render as JSON for readability.
 
 Dashboard tabs:
 
 - `Latest Run`: reads and renders the newest stored analysis results.
-- `History`: requires at least one filter before reading matching audit rows.
+- `History`: requires at least one filter before reading matching audit rows; Transparent or Opaque mode alone satisfies this gate, while All does not.
 - `Metrics Reference`: static educational content for rule writing. It does not call FMP, contact an LLM, run analysis, or read/write SQLite at dashboard render time. Its hardcoded AAPL values were fetched once from FMP on 2026-07-05 at 16:05 UTC with `python scripts/fetch_metrics_snapshot.py AAPL`.
-- `Settings`: edits provider, optional temperature, rules, API keys, watchlist, and portfolio inputs.
+- `Settings`: edits provider, optional temperature, Explanation Mode, rules, API keys, watchlist, and portfolio inputs.
 
 ## Data Flow
 
@@ -300,7 +304,7 @@ Signals are written to SQLite
 Dashboard reloads latest run
       |
       v
-Cards display signal, rationale, and data used
+Cards display signal, stored rationale when present, and data used
 ```
 
 ## Inputs
@@ -369,6 +373,7 @@ Each evaluated ticker produces:
 - `rules_applied`: exact BUY or SELL rule block used for that row.
 - `temperature`: optional sampling temperature used for the run, or `NULL` when omitted.
 - `run_elapsed_seconds`: total wall-clock time for the batch run, repeated on each row so History can display run duration.
+- `explanation_mode`: `1` for transparent runs, `0` for opaque runs, or `NULL` for rows that predate the feature. Successful opaque rows have `rationale = NULL`; opaque error rows still store diagnostic text.
 
 ### Legacy Signal Display
 
@@ -440,6 +445,7 @@ To change the UI:
 - The planner maps user-rule wording to fixed tool sets, so ambiguous or novel wording may require planner updates.
 - The current database stores an audit log of generated signals and the rule text used for each signal, but it does not store raw historical market data beyond the compact `data_fetched` payload preserved by the evaluator.
 - Lower temperature can reduce rationale wording variation, but it does not affect signal selection.
+- Opaque runs skip rationale generation and can complete faster than transparent runs; this latency difference is a possible responsiveness confound in study interpretation.
 - The current analysis path evaluates tickers in parallel with `MAX_WORKERS = 3`.
-- The dashboard displays the latest run only.
+- The dashboard displays the latest run and filtered History rows.
 

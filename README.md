@@ -174,7 +174,9 @@ cd src
 streamlit run dashboard/app.py
 ```
 
-Open the URL shown in the terminal (usually `http://localhost:8501`). In **Settings**, review or edit your rules, click **Validate Metrics**, inspect the bound metric and threshold for each compiled clause, then click **Approve Rule Set**. The dashboard-level **Run Analysis** button stays locked until the current rule text has been validated and approved. Results appear on screen with expandable explanations and data.
+Open the URL shown in the terminal (usually `http://localhost:8501`). In **Settings**, review or edit your rules, choose **Explanation Mode**, click **Validate Metrics**, inspect the bound metric and threshold for each compiled clause, then click **Approve Rule Set**. The dashboard-level **Run Analysis** button stays locked until the current rule text has been validated and approved. Results appear on screen with expandable data and, when Explanation Mode is enabled, expandable explanations.
+
+Explanation Mode defaults to off. With it off, the app does not invoke the explanation layer for successful signals; cards still show the ticker, signal, governing rule, and underlying data. Error messages are always recorded and shown. History stores the mode for each row; a blank/unknown stored mode means the row predates this feature.
 
 The dashboard also includes a **Metrics Reference** tab. It is static help content: it does not fetch live data, read the database, or run analysis. Use it to see which metrics the agent can fetch, which source tool provides each metric family, and how to phrase metrics in plain-English BUY or SELL rules. The sample values shown there are a real AAPL snapshot fetched once from FMP on 2026-07-05 at 16:05 UTC; they are static examples and are not automatically refreshed.
 
@@ -245,10 +247,10 @@ The CI build starts from a clean checkout with no local `.env` file. The shared 
 3. For each stock, the app identifies which data points the approved rules require.
 4. It fetches only those data points from Financial Modeling Prep.
 5. It evaluates the data against the approved rules and decides the signal: `BUY` or `SKIP` for watchlist stocks, `SELL` or `HOLD` for portfolio holdings.
-6. It writes a plain-language explanation of the deterministic signal.
+6. If Explanation Mode is enabled, it writes a plain-language explanation of the deterministic signal. If the mode is disabled, successful rows store `NULL` for `rationale`; error rows still store diagnostic text.
 7. Results are saved locally to `db/signals.db` and displayed in the dashboard.
 
-Every run is logged to the database for auditability, including the provider, model, optional temperature, exact rule text applied to each row, and the code-derived `triggering_rule`. The `rules_applied` field stores the rule block in force at the time of the run. The dashboard always shows the most recent run.
+Every run is logged to the database for auditability, including the provider, model, optional temperature, explanation mode, exact rule text applied to each row, and the code-derived `triggering_rule`. The `rules_applied` field stores the rule block in force at the time of the run. The dashboard always shows the most recent run.
 
 ### Market data tools
 
@@ -305,7 +307,8 @@ src/
 - Designed for **end-of-day analysis** of S&P 500 stocks. Not suitable for intraday trading.
 - Recommendations are based on the rules you define. The system does not predict market movements.
 - Data is sourced from Financial Modeling Prep. Free-plan request limits may apply.
-- With an approved rule set, signals are computed deterministically in Python; the LLM is used for compile-time binding fallback and rationale generation.
+- With an approved rule set, signals are computed deterministically in Python; the LLM is used for compile-time binding fallback and, only when Explanation Mode is enabled, rationale generation.
+- Opaque runs skip rationale generation and may complete faster than transparent runs, which can affect perceived responsiveness during study use.
 - Changing providers or models can change agent behavior, so runs from different providers are not directly comparable in research analysis.
 
 ---
